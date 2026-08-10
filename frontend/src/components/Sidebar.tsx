@@ -1,0 +1,67 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
+
+type RunSummary = { run_id: string; status: string; requester_name: string; created_at: string };
+
+export function Sidebar({ activeRunId }: { activeRunId?: string }) {
+  const [runs, setRuns] = useState<RunSummary[]>([]);
+
+  useEffect(() => {
+    api.listRuns().then(setRuns).catch(() => {});
+  }, []);
+
+  return (
+    <aside className="w-64 shrink-0 h-screen sticky top-0 flex flex-col border-r border-black/5 bg-[#F7F5F0]">
+      <div className="px-4 py-4">
+        <a href="/" className="flex items-center gap-2">
+          <span className="w-6 h-6 rounded-md bg-slate-900 text-white text-xs font-bold flex items-center justify-center">
+            R
+          </span>
+          <span className="text-sm font-semibold text-slate-900">Request Assistant</span>
+        </a>
+      </div>
+
+      <div className="px-3">
+        <a
+          href="/"
+          className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 shadow-sm transition-colors"
+        >
+          <span className="text-base leading-none">+</span> New request
+        </a>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-3 py-4">
+        <p className="px-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-2">
+          Recent
+        </p>
+        <div className="space-y-0.5">
+          {runs.map((r) => (
+            <a
+              key={r.run_id}
+              href="/history"
+              className={`block px-2.5 py-2 rounded-md text-sm truncate transition-colors ${
+                activeRunId === r.run_id
+                  ? "bg-slate-200/70 text-slate-900"
+                  : "text-slate-600 hover:bg-slate-200/40"
+              }`}
+            >
+              {r.requester_name}{" "}
+              <span className="text-slate-400 font-normal">· {r.status}</span>
+            </a>
+          ))}
+          {runs.length === 0 && (
+            <p className="px-2 text-xs text-slate-400">No requests yet.</p>
+          )}
+        </div>
+      </div>
+
+      <div className="px-3 py-4 border-t border-black/5">
+        <a href="/history" className="text-xs text-slate-500 hover:text-slate-700">
+          View audit trail →
+        </a>
+      </div>
+    </aside>
+  );
+}
