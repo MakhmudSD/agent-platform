@@ -4,11 +4,14 @@ import { useState } from "react";
 import { api, Card } from "@/lib/api";
 import { CardRenderer } from "@/components/CardRenderer";
 import { Sidebar } from "@/components/Sidebar";
+import { REQUESTER_NAME, useRole } from "@/lib/role";
 
 type Turn = { from: "user" | "agent"; card?: Card; text?: string };
 
 export default function Home() {
-  const [name] = useState("Alice");
+  const { role } = useRole();
+  const isApprover = role === "approver";
+
   const [runId, setRunId] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -16,6 +19,7 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
 
   async function handleSend() {
+    if (isApprover) return;
     if (!input.trim() || busy) return;
     const message = input.trim();
     setInput("");
@@ -24,7 +28,7 @@ export default function Home() {
     try {
       const res = runId
         ? await api.sendMessage(runId, message)
-        : await api.startRun(name, message);
+        : await api.startRun(REQUESTER_NAME, message);
       setRunId(res.run_id);
       setStatus(res.status);
       setTurns((t) => [...t, { from: "agent", card: res.card }]);
@@ -34,7 +38,7 @@ export default function Home() {
   }
 
   async function handleApproval(approved: boolean, reason?: string) {
-    if (!runId || busy) return;
+    if (!isApprover || !runId || busy) return;
     setBusy(true);
     try {
       const res = await api.respondToApproval(runId, approved, reason);
@@ -60,12 +64,12 @@ export default function Home() {
             {turns.length === 0 ? (
               <div className="pt-24 text-center">
                 <h1 className="text-2xl font-semibold text-slate-900 mb-2">
-                  What do you need approved?
+                  {isApprover ? "Nothing to review yet" : "What do you need approved?"}
                 </h1>
                 <p className="text-slate-500 text-sm max-w-md mx-auto">
-                  Describe your request. I'll ask what's missing, check company policy,
-                  and route it for approval. Try: "I need to expense a conference ticket,
-                  about $2400".
+                  {isApprover
+                    ? "Requests awaiting your approval will appear in the sidebar queue."
+                    : 'Describe your request. I\'ll ask what\'s missing, check company policy, and route it for approval. Try: "I need to expense a conference ticket, about $2400".'}
                 </p>
               </div>
             ) : (
@@ -81,7 +85,7 @@ export default function Home() {
                         <CardRenderer
                           card={turn.card!}
                           onApprovalDecision={
-                            turn === latestApprovalCard && isAwaitingApproval
+                            isApprover && turn === latestApprovalCard && isAwaitingApproval
                               ? handleApproval
                               : undefined
                           }
@@ -97,28 +101,35 @@ export default function Home() {
 
         <div className="border-t border-slate-100 bg-white px-6 py-5">
           <div className="max-w-3xl mx-auto">
-            <div className="flex items-center gap-2 rounded-full border border-slate-200 shadow-sm px-2 py-1.5 focus-within:border-slate-400 transition-colors">
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                disabled={busy || isAwaitingApproval}
-                placeholder={
-                  isAwaitingApproval
-                    ? "Waiting for approval decision above..."
-                    : "Type your request..."
-                }
-                className="flex-1 bg-transparent px-3 py-1.5 text-sm outline-none disabled:text-slate-400"
-              />
-              <button
-                onClick={handleSend}
-                disabled={busy || isAwaitingApproval}
-                aria-label="Send"
-                className="w-8 h-8 shrink-0 flex items-center justify-center rounded-full bg-slate-900 text-white disabled:opacity-30 transition-opacity"
-              >
-                ↑
-              </button>
-            </div>
+            {isApprover ? (
+              <p className="text-center text-sm text-slate-400">
+                Approvers review existing requests and can't start new ones. Switch to
+                Requester to submit a request.
+              </p>
+            ) : (
+              <div className="flex items-center gap-2 rounded-full border border-slate-200 shadow-sm px-2 py-1.5 focus-within:border-slate-400 transition-colors">
+                <input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                  disabled={busy || isAwaitingApproval}
+                  placeholder={
+                    isAwaitingApproval
+                      ? "Waiting for approval decision above..."
+                      : "Type your request..."
+                  }
+                  className="flex-1 bg-transparent px-3 py-1.5 text-sm outline-none disabled:text-slate-400"
+                />
+                <button
+                  onClick={handleSend}
+                  disabled={busy || isAwaitingApproval}
+                  aria-label="Send"
+                  className="w-8 h-8 shrink-0 flex items-center justify-center rounded-full bg-slate-900 text-white disabled:opacity-30 transition-opacity"
+                >
+                  ↑
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

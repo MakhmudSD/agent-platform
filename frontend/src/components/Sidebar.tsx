@@ -2,25 +2,49 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { REQUESTER_NAME, useRole } from "@/lib/role";
 
 type RunSummary = { run_id: string; status: string; requester_name: string; created_at: string };
 
 export function Sidebar({ activeRunId }: { activeRunId?: string }) {
+  const { role, setRole } = useRole();
   const [runs, setRuns] = useState<RunSummary[]>([]);
 
   useEffect(() => {
     api.listRuns().then(setRuns).catch(() => {});
-  }, []);
+  }, [role, activeRunId]);
+
+  const visibleRuns =
+    role === "approver"
+      ? runs.filter((r) => r.status === "awaiting_approval")
+      : runs.filter((r) => r.requester_name === REQUESTER_NAME);
+
+  const listLabel = role === "approver" ? "Pending approval" : "Recent";
+  const emptyLabel = role === "approver" ? "Nothing awaiting approval." : "No requests yet.";
 
   return (
     <aside className="w-64 shrink-0 h-screen sticky top-0 flex flex-col border-r border-black/5 bg-[#F7F5F0]">
-      <div className="px-4 py-4">
+      <div className="px-4 py-4 space-y-3">
         <a href="/" className="flex items-center gap-2">
           <span className="w-6 h-6 rounded-md bg-slate-900 text-white text-xs font-bold flex items-center justify-center">
             R
           </span>
           <span className="text-sm font-semibold text-slate-900">Request Assistant</span>
         </a>
+
+        <label className="block">
+          <span className="block text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 mb-1">
+            Acting as
+          </span>
+          <select
+            value={role}
+            onChange={(e) => setRole(e.target.value as "requester" | "approver")}
+            className="w-full text-sm rounded-md border border-slate-200 bg-white px-2 py-1.5 text-slate-900"
+          >
+            <option value="requester">Requester</option>
+            <option value="approver">Approver</option>
+          </select>
+        </label>
       </div>
 
       <div className="px-3">
@@ -34,10 +58,10 @@ export function Sidebar({ activeRunId }: { activeRunId?: string }) {
 
       <div className="flex-1 overflow-y-auto px-3 py-4">
         <p className="px-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-2">
-          Recent
+          {listLabel}
         </p>
         <div className="space-y-0.5">
-          {runs.map((r) => (
+          {visibleRuns.map((r) => (
             <a
               key={r.run_id}
               href="/history"
@@ -51,8 +75,8 @@ export function Sidebar({ activeRunId }: { activeRunId?: string }) {
               <span className="text-slate-400 font-normal">· {r.status}</span>
             </a>
           ))}
-          {runs.length === 0 && (
-            <p className="px-2 text-xs text-slate-400">No requests yet.</p>
+          {visibleRuns.length === 0 && (
+            <p className="px-2 text-xs text-slate-400">{emptyLabel}</p>
           )}
         </div>
       </div>

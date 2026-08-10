@@ -50,7 +50,10 @@ def _search_pgvector(db: Session, query_embedding: list[float], top_k: int) -> l
         ),
         {"embedding": _vector_literal(query_embedding), "limit": top_k * 4},
     ).fetchall()
-    return [dict(r._mapping) for r in rows]
+    results = [dict(r._mapping) for r in rows]
+    for row in results:
+        row["doc_id"] = str(row["doc_id"])
+    return results
 
 
 def retrieve_policy(db: Session, query: str, top_k: int = 3) -> list[PolicyMatch]:
@@ -61,6 +64,8 @@ def retrieve_policy(db: Session, query: str, top_k: int = 3) -> list[PolicyMatch
     all_dicts = [dict(r._mapping) for r in all_rows]
     if not all_dicts:
         return []
+    for row in all_dicts:
+        row["doc_id"] = str(row["doc_id"])
 
     # BM25 lexical ranking
     tokenized = [row["text"].lower().split() for row in all_dicts]
