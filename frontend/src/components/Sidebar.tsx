@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, Notification } from "@/lib/api";
 import { REQUESTER_NAME, useRole } from "@/lib/role";
 
 type RunSummary = { run_id: string; status: string; requester_name: string; created_at: string };
@@ -9,9 +9,11 @@ type RunSummary = { run_id: string; status: string; requester_name: string; crea
 export function Sidebar({ activeRunId }: { activeRunId?: string }) {
   const { role, setRole } = useRole();
   const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
 
   useEffect(() => {
     api.listRuns().then(setRuns).catch(() => {});
+    api.listNotifications().then(setNotifications).catch(() => {});
   }, [role, activeRunId]);
 
   const visibleRuns =
@@ -22,6 +24,23 @@ export function Sidebar({ activeRunId }: { activeRunId?: string }) {
   const listLabel = role === "approver" ? "Pending approval" : "Recent";
   const emptyLabel = role === "approver" ? "Nothing awaiting approval." : "No requests yet.";
 
+  // Notifications carry no role/user column (no real identity system yet) --
+  // "relevant to this role" is decided the same way the run list above is:
+  // by message shape (set at creation in nodes.py) and, for the Requester
+  // side, by joining run_id against the runs list already fetched.
+  const runById = Object.fromEntries(runs.map((r) => [r.run_id, r]));
+  const relevantUnread = notifications.filter((n) => {
+    if (n.read) return false;
+    if (role === "approver") return n.message.startsWith("Awaiting approval:");
+    const run = runById[n.run_id];
+    return n.message.startsWith("Your request") && run?.requester_name === REQUESTER_NAME;
+  });
+
+  async function clearNotifications() {
+    await Promise.all(relevantUnread.map((n) => api.markNotificationRead(n.id)));
+    api.listNotifications().then(setNotifications).catch(() => {});
+  }
+
   return (
     <aside className="w-64 shrink-0 h-screen sticky top-0 flex flex-col border-r border-black/5 bg-[#F7F5F0]">
       <div className="px-4 py-4 space-y-3">
@@ -30,6 +49,15 @@ export function Sidebar({ activeRunId }: { activeRunId?: string }) {
             R
           </span>
           <span className="text-sm font-semibold text-slate-900">Request Assistant</span>
+          {relevantUnread.length > 0 && (
+            <button
+              onClick={clearNotifications}
+              title={relevantUnread.map((n) => n.message).join("\n")}
+              className="ml-auto flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10.5px] font-semibold leading-none hover:bg-red-600 transition-colors"
+            >
+              {relevantUnread.length}
+            </button>
+          )}
         </a>
 
         <label className="block">

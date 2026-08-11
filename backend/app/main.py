@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.core.tracing import instrument_app
+from app.routes.notifications import router as notifications_router
 from app.routes.runs import router as runs_router
 
 app = FastAPI(title="Agent Platform — Employee Request Assistant")
@@ -19,6 +20,7 @@ app.add_middleware(
 )
 
 app.include_router(runs_router)
+app.include_router(notifications_router)
 instrument_app(app)
 
 

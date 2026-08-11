@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 
 from app.core.tracing import traced_node
 from app.db.models import Run, RunStatus
-from app.orchestrator.audit import log_event
+from app.orchestrator.audit import log_event, notify
 from app.orchestrator.graph_state import OrchestratorState
 from app.orchestrator.vertical_employee_request import (
     DRAFT_SYSTEM_PROMPT, GATHER_SYSTEM_PROMPT, REQUIRED_FIELDS,
@@ -235,6 +235,11 @@ def draft_node(state: OrchestratorState, config: RunnableConfig) -> dict:
     run.status = RunStatus.AWAITING_APPROVAL
     log_event(db, run, "state_transition", {"to": RunStatus.AWAITING_APPROVAL.value})
     log_event(db, run, "approval_requested", {"draft": final_draft})
+    notify(
+        db, run,
+        f"Awaiting approval: {run.requester_name}'s request "
+        f"({final_draft.get('category', 'request')}, ${final_draft.get('amount', '?')}) needs your review.",
+    )
 
     return {"draft": final_draft, "status": RunStatus.AWAITING_APPROVAL.value}
 
@@ -266,10 +271,20 @@ def apply_approval_node(state: OrchestratorState, config: RunnableConfig) -> dic
         run.status = RunStatus.FINALIZED
         log_event(db, run, "approved", {"reason": reason})
         log_event(db, run, "finalized", {"draft": run.draft})
+        notify(
+            db, run,
+            f"Your request ({run.draft.get('category', 'request')}, "
+            f"${run.draft.get('amount', '?')}) was approved.",
+        )
         status = RunStatus.FINALIZED.value
     else:
         run.status = RunStatus.REJECTED
         log_event(db, run, "rejected", {"reason": reason})
+        notify(
+            db, run,
+            f"Your request ({run.draft.get('category', 'request')}, "
+            f"${run.draft.get('amount', '?')}) was rejected.",
+        )
         status = RunStatus.REJECTED.value
 
     return {"status": status}

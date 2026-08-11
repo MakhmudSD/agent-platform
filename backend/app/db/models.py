@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Column, String, Text, DateTime, ForeignKey, Enum as SAEnum, Index
+    Boolean, Column, String, Text, DateTime, ForeignKey, Enum as SAEnum, Index
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import declarative_base, relationship
@@ -86,6 +86,25 @@ class RunEvent(Base):
     __table_args__ = (
         Index("ix_run_events_run_id_created_at", "run_id", "created_at"),
     )
+
+
+class Notification(Base):
+    """
+    Fired on approval_requested (tells an Approver something needs them)
+    and on finalized/rejected (tells the Requester their request resolved).
+    No role/user column, on purpose -- there's no real per-user identity in
+    this app yet (see role.tsx's "acting as" dropdown), so the frontend
+    decides who a notification is "for" by joining run_id against the
+    already-fetched runs list, same technique the sidebar's own Recent /
+    Pending approval filtering already uses.
+    """
+    __tablename__ = "notifications"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid)
+    run_id = Column(UUID(as_uuid=False), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
+    message = Column(Text, nullable=False)
+    read = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), default=_now)
 
 
 class PolicyDoc(Base):

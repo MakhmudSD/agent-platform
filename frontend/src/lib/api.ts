@@ -10,6 +10,14 @@ export type Card = ClarifyingQuestionCard | ApprovalRequestCard | FinalConfirmat
 
 export type RunResponse = { run_id: string; status: string; card: Card };
 
+export type Notification = {
+  id: string;
+  run_id: string;
+  message: string;
+  read: boolean;
+  created_at: string;
+};
+
 async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
@@ -41,4 +49,12 @@ export const api = {
     if (!res.ok) throw new Error(`API error ${res.status}`);
     return res.json();
   },
+
+  listNotifications: async (): Promise<Notification[]> => {
+    const res = await fetch(`${API_BASE}/notifications`);
+    if (!res.ok) throw new Error(`API error ${res.status}`);
+    return res.json();
+  },
+
+  markNotificationRead: (id: string) => post<{ id: string; read: boolean }>(`/notifications/${id}/read`, {}),
 };
