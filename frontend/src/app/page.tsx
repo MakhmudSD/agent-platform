@@ -102,8 +102,17 @@ export default function Home() {
   async function handleSelectPendingRun(selectedRunId: string) {
     if (busy) return;
     setWsError(null);
-    const run = await api.getRun(selectedRunId);
-    if (run.status !== "awaiting_approval") return;
+    let run;
+    try {
+      run = await api.getRun(selectedRunId);
+    } catch {
+      setWsError("Couldn't load that request. Try again.");
+      return;
+    }
+    if (run.status !== "awaiting_approval") {
+      setWsError("This request is no longer awaiting approval.");
+      return;
+    }
     setRunId(run.run_id);
     setStatus(run.status);
     setTurns([{ from: "agent", card: { type: "approval_request", draft: run.draft, policy_citations: [] } }]);
