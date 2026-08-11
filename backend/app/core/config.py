@@ -1,6 +1,13 @@
 from functools import lru_cache
 
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
+
+# LangSmith/langchain-core read tracing config (LANGCHAIN_TRACING_V2 etc.)
+# straight from os.environ, not from our Settings object — pydantic-settings
+# parsing .env only populates Settings' own fields, it doesn't export to the
+# process environment. load_dotenv() actually does.
+load_dotenv()
 
 
 class Settings(BaseSettings):
@@ -12,6 +19,7 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        extra = "ignore"  # tracing vars (LANGCHAIN_*) are for os.environ, not Settings fields
 
 
 @lru_cache

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import Run
 from app.db.session import get_db
-from app.orchestrator import engine
+from app.orchestrator import graph
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -34,21 +34,21 @@ def _get_run_or_404(db: Session, run_id: str) -> Run:
 
 @router.post("")
 def create_run(body: StartRunRequest, db: Session = Depends(get_db)):
-    run, card = engine.start_run(db, body.requester_name, body.message)
+    run, card = graph.start_run(db, body.requester_name, body.message)
     return {"run_id": run.id, "status": run.status, "card": card.model_dump()}
 
 
 @router.post("/{run_id}/messages")
 def send_message(run_id: str, body: MessageRequest, db: Session = Depends(get_db)):
     run = _get_run_or_404(db, run_id)
-    card = engine.handle_message(db, run, body.message)
+    card = graph.handle_message(db, run, body.message)
     return {"run_id": run.id, "status": run.status, "card": card.model_dump()}
 
 
 @router.post("/{run_id}/approval")
 def respond_to_approval(run_id: str, body: ApprovalRequest, db: Session = Depends(get_db)):
     run = _get_run_or_404(db, run_id)
-    card = engine.handle_approval_response(db, run, body.approved, body.reason)
+    card = graph.handle_approval_response(db, run, body.approved, body.reason)
     return {"run_id": run.id, "status": run.status, "card": card.model_dump()}
 
 

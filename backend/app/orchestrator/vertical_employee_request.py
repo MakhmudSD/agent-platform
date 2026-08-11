@@ -1,9 +1,9 @@
 """
 Everything specific to the "Employee Request Assistant" demo scenario lives
-here. The orchestrator engine (engine.py) imports this module but contains
-no scenario-specific knowledge itself — swapping to a different workflow
-flavor (IT access request, vendor onboarding) means writing a new module
-like this one, not touching engine.py.
+here. The orchestrator graph (graph.py, nodes.py) imports this module but
+contains no scenario-specific knowledge itself — swapping to a different
+workflow flavor (IT access request, vendor onboarding) means writing a new
+module like this one, not touching the graph nodes.
 
 This is the platform/vertical seam from the spec, kept intentionally small
 for the MVP rather than built out as a full plugin-registration system.
