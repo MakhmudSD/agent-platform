@@ -27,6 +27,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.types import interrupt
 from sqlalchemy.orm import Session
 
+from app.core.tracing import traced_node
 from app.db.models import Run, RunStatus
 from app.orchestrator.audit import log_event
 from app.orchestrator.graph_state import OrchestratorState
@@ -75,6 +76,7 @@ def _draft_complete(draft: dict) -> bool:
 # manager
 # ---------------------------------------------------------------------------
 
+@traced_node("manager")
 def manager_node(state: OrchestratorState, config: RunnableConfig) -> dict:
     db: Session = config["configurable"]["db"]
     run: Run = config["configurable"]["run"]
@@ -112,6 +114,7 @@ def route_from_manager(state: OrchestratorState) -> str:
 # intake (work) + await_message (interrupt-only)
 # ---------------------------------------------------------------------------
 
+@traced_node("intake")
 def intake_node(state: OrchestratorState, config: RunnableConfig) -> dict:
     db: Session = config["configurable"]["db"]
     run: Run = config["configurable"]["run"]
@@ -143,6 +146,7 @@ def route_after_intake(state: OrchestratorState) -> str:
     return "manager" if state["status"] == RunStatus.RETRIEVING.value else "await_message"
 
 
+@traced_node("await_message")
 def await_message_node(state: OrchestratorState, config: RunnableConfig) -> dict:
     question = state.get("pending_question", "Could you clarify your request?")
     answer = interrupt({"kind": "clarifying_question", "question": question})
@@ -161,6 +165,7 @@ def await_message_node(state: OrchestratorState, config: RunnableConfig) -> dict
 # policy_research
 # ---------------------------------------------------------------------------
 
+@traced_node("policy_research")
 def policy_research_node(state: OrchestratorState, config: RunnableConfig) -> dict:
     db: Session = config["configurable"]["db"]
     run: Run = config["configurable"]["run"]
@@ -204,6 +209,7 @@ def policy_research_node(state: OrchestratorState, config: RunnableConfig) -> di
 # draft
 # ---------------------------------------------------------------------------
 
+@traced_node("draft")
 def draft_node(state: OrchestratorState, config: RunnableConfig) -> dict:
     db: Session = config["configurable"]["db"]
     run: Run = config["configurable"]["run"]
@@ -237,6 +243,7 @@ def draft_node(state: OrchestratorState, config: RunnableConfig) -> dict:
 # interrupt_for_approval (interrupt-only) + apply_approval (work)
 # ---------------------------------------------------------------------------
 
+@traced_node("interrupt_for_approval")
 def interrupt_for_approval_node(state: OrchestratorState, config: RunnableConfig) -> dict:
     citations = [
         {"title": p["title"], "excerpt": p["text"][:280]}
@@ -248,6 +255,7 @@ def interrupt_for_approval_node(state: OrchestratorState, config: RunnableConfig
     return {"approval_decision": decision}
 
 
+@traced_node("apply_approval")
 def apply_approval_node(state: OrchestratorState, config: RunnableConfig) -> dict:
     db: Session = config["configurable"]["db"]
     run: Run = config["configurable"]["run"]

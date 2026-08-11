@@ -30,6 +30,7 @@ from psycopg_pool import ConnectionPool
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.tracing import tracer
 from app.db.models import Run, RunStatus
 from app.orchestrator.audit import log_event
 from app.orchestrator.cards import (
@@ -124,7 +125,9 @@ def _card_from_final_state(run: Run, result: dict) -> Card:
 
 
 def _run_and_translate(db: Session, run: Run, invoke_input) -> Card:
-    result = _graph.invoke(invoke_input, _config_for(db, run))
+    with tracer.start_as_current_span("graph.invoke") as span:
+        span.set_attribute("run.id", run.id)
+        result = _graph.invoke(invoke_input, _config_for(db, run))
     db.commit()
 
     interrupts = result.get("__interrupt__")
