@@ -16,7 +16,9 @@ import re
 from google.api_core.exceptions import ResourceExhausted
 
 _RETRY_DELAY_RE = re.compile(r"^([\d.]+)s?$")
-_FALLBACK_SECONDS = 5.0
+# If a 429 ever arrives without RetryInfo, fall back to something that can
+# actually survive an RPM quota window rather than a token gesture at backoff.
+_FALLBACK_SECONDS = 20.0
 _MAX_SECONDS = 65.0
 
 

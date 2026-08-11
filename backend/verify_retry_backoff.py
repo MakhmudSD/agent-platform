@@ -156,13 +156,13 @@ def test_wait_honors_server_retry_delay() -> bool:
 
     print(f"  wait for 12.77s server delay: {w12} (expect ~13.77)")
     print(f"  wait for 53s server delay: {w53} (expect ~54)")
-    print(f"  wait with no details (fallback): {w_no_details} (expect 5.0)")
+    print(f"  wait with no details (fallback): {w_no_details} (expect 20.0)")
     print(f"  wait for 500s server delay (capped): {w_over_cap} (expect <= 65)")
 
     ok = (
         abs(w12 - 13.771204034) < 1e-6
         and abs(w53 - 54.0) < 1e-6
-        and w_no_details == 5.0
+        and w_no_details == 20.0
         and w_over_cap <= 65.0
     )
     print(f"  RESULT: {'PASS' if ok else 'FAIL'}")
