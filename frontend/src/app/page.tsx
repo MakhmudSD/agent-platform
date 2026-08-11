@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { api, Card } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
+import { Card } from "@/lib/api";
+import { AuditLogEntry, LiveEvent, RunSocket } from "@/lib/ws";
 import { CardRenderer } from "@/components/CardRenderer";
 import { Sidebar } from "@/components/Sidebar";
+import { LivePanel } from "@/components/LivePanel";
 import { REQUESTER_NAME, useRole } from "@/lib/role";
 
 type Turn = { from: "user" | "agent"; card?: Card; text?: string };
@@ -17,36 +19,79 @@ export default function Home() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [wsError, setWsError] = useState<string | null>(null);
 
-  async function handleSend() {
-    if (isApprover) return;
-    if (!input.trim() || busy) return;
-    const message = input.trim();
-    setInput("");
-    setTurns((t) => [...t, { from: "user", text: message }]);
-    setBusy(true);
-    try {
-      const res = runId
-        ? await api.sendMessage(runId, message)
-        : await api.startRun(REQUESTER_NAME, message);
-      setRunId(res.run_id);
-      setStatus(res.status);
-      setTurns((t) => [...t, { from: "agent", card: res.card }]);
-    } finally {
-      setBusy(false);
+  // Live panel state -- driven entirely by events streamed over the socket,
+  // not by the REST card responses (those still arrive too, as the final
+  // "result" message, and are what actually advances `turns`).
+  const [liveNode, setLiveNode] = useState<string | null>(null);
+  const [liveDraft, setLiveDraft] = useState<Record<string, any> | null>(null);
+  const [streamText, setStreamText] = useState("");
+  const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
+
+  const socketRef = useRef<RunSocket | null>(null);
+
+  useEffect(() => {
+    const socket = new RunSocket(handleEvent);
+    socketRef.current = socket;
+    return () => socket.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function handleEvent(event: LiveEvent) {
+    switch (event.type) {
+      case "node_started":
+        setLiveNode(event.node);
+        setStreamText("");
+        break;
+      case "node_finished":
+      case "node_failed":
+        setLiveNode(null);
+        break;
+      case "audit_event":
+        setAuditLog((log) => [...log, { event_type: event.event_type, payload: event.payload, ts: Date.now() }]);
+        if ((event.event_type === "draft_updated" || event.event_type === "draft_finalized_for_review") && event.payload.draft) {
+          setLiveDraft(event.payload.draft);
+        }
+        break;
+      case "llm_token":
+        setStreamText((s) => s + event.text);
+        break;
+      case "result":
+        setRunId(event.run_id);
+        setStatus(event.status);
+        setTurns((t) => [...t, { from: "agent", card: event.card }]);
+        setBusy(false);
+        setLiveNode(null);
+        break;
+      case "error":
+        setWsError(event.detail);
+        setBusy(false);
+        setLiveNode(null);
+        break;
     }
   }
 
-  async function handleApproval(approved: boolean, reason?: string) {
-    if (!isApprover || !runId || busy) return;
+  function handleSend() {
+    if (isApprover) return;
+    if (!input.trim() || busy || !socketRef.current) return;
+    const message = input.trim();
+    setInput("");
+    setWsError(null);
+    setTurns((t) => [...t, { from: "user", text: message }]);
     setBusy(true);
-    try {
-      const res = await api.respondToApproval(runId, approved, reason);
-      setStatus(res.status);
-      setTurns((t) => [...t, { from: "agent", card: res.card }]);
-    } finally {
-      setBusy(false);
+    if (runId) {
+      socketRef.current.send({ action: "message", run_id: runId, message });
+    } else {
+      socketRef.current.send({ action: "start", requester_name: REQUESTER_NAME, message });
     }
+  }
+
+  function handleApproval(approved: boolean, reason?: string) {
+    if (!isApprover || !runId || busy || !socketRef.current) return;
+    setWsError(null);
+    setBusy(true);
+    socketRef.current.send({ action: "approval", run_id: runId, approved, reason });
   }
 
   const latestApprovalCard = [...turns].reverse().find(
@@ -94,10 +139,21 @@ export default function Home() {
                     )}
                   </div>
                 ))}
+                {busy && (
+                  <div className="max-w-[85%] text-sm text-slate-400 px-1">
+                    {liveNode ? `Working: ${liveNode}...` : "Working..."}
+                  </div>
+                )}
               </div>
             )}
           </div>
         </div>
+
+        {wsError && (
+          <div className="px-6 py-2 bg-red-50 border-t border-red-100 text-xs text-red-600">
+            {wsError}
+          </div>
+        )}
 
         <div className="border-t border-slate-100 bg-white px-6 py-5">
           <div className="max-w-3xl mx-auto">
@@ -133,6 +189,14 @@ export default function Home() {
           </div>
         </div>
       </div>
+
+      <LivePanel
+        status={status}
+        liveNode={liveNode}
+        liveDraft={liveDraft}
+        streamText={streamText}
+        auditLog={auditLog}
+      />
     </div>
   );
 }
