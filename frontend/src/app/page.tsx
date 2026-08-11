@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Card } from "@/lib/api";
+import { api, Card } from "@/lib/api";
 import { AuditLogEntry, LiveEvent, RunSocket } from "@/lib/ws";
 import { CardRenderer } from "@/components/CardRenderer";
 import { Sidebar } from "@/components/Sidebar";
@@ -32,7 +32,11 @@ export default function Home() {
   const socketRef = useRef<RunSocket | null>(null);
 
   useEffect(() => {
-    const socket = new RunSocket(handleEvent);
+    const socket = new RunSocket(handleEvent, () => {
+      setWsError("Connection to the server was lost. Refresh the page to reconnect.");
+      setBusy(false);
+      setLiveNode(null);
+    });
     socketRef.current = socket;
     return () => socket.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -87,6 +91,28 @@ export default function Home() {
     }
   }
 
+  // Fixes a real gap: without this, an Approver could only ever act on
+  // whichever run happened to already be loaded in this tab (e.g. one this
+  // tab itself started as Requester) -- the sidebar's pending-approval
+  // queue had no way to load a *different* run in. Reconstructs a minimal
+  // approval_request card from GET /runs/{id} since that endpoint doesn't
+  // return policy_citations (only the live interrupt payload does) --
+  // approving/rejecting still works correctly, the citations just won't
+  // re-render for a run picked up this way.
+  async function handleSelectPendingRun(selectedRunId: string) {
+    if (busy) return;
+    setWsError(null);
+    const run = await api.getRun(selectedRunId);
+    if (run.status !== "awaiting_approval") return;
+    setRunId(run.run_id);
+    setStatus(run.status);
+    setTurns([{ from: "agent", card: { type: "approval_request", draft: run.draft, policy_citations: [] } }]);
+    setLiveDraft(run.draft);
+    setAuditLog([]);
+    setStreamText("");
+    setLiveNode(null);
+  }
+
   function handleApproval(approved: boolean, reason?: string) {
     if (!isApprover || !runId || busy || !socketRef.current) return;
     setWsError(null);
@@ -101,7 +127,7 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen bg-white">
-      <Sidebar activeRunId={runId ?? undefined} />
+      <Sidebar activeRunId={runId ?? undefined} onSelectPendingRun={handleSelectPendingRun} />
 
       <div className="flex-1 flex flex-col h-screen">
         <div className="flex-1 overflow-y-auto">

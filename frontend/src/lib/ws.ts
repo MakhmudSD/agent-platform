@@ -25,14 +25,26 @@ export type RunAction =
 export class RunSocket {
   private ws: WebSocket;
   private queued: string[] = [];
+  private intentionalClose = false;
 
-  constructor(onEvent: (event: LiveEvent) => void) {
+  // onDisconnect fires for a real drop (backend restart, network blip,
+  // sleep/wake) -- not for the close() this class's own caller triggers on
+  // unmount. Without this, a dead socket previously just left `send()`
+  // queuing messages that would never be delivered, with the UI stuck on
+  // "Working..." forever and no error surfaced.
+  constructor(onEvent: (event: LiveEvent) => void, onDisconnect?: () => void) {
     this.ws = new WebSocket(WS_URL);
     this.ws.onopen = () => {
       this.queued.forEach((msg) => this.ws.send(msg));
       this.queued = [];
     };
     this.ws.onmessage = (ev) => onEvent(JSON.parse(ev.data));
+    this.ws.onclose = () => {
+      if (!this.intentionalClose) onDisconnect?.();
+    };
+    this.ws.onerror = () => {
+      if (!this.intentionalClose) onDisconnect?.();
+    };
   }
 
   send(action: RunAction) {
@@ -45,6 +57,7 @@ export class RunSocket {
   }
 
   close() {
+    this.intentionalClose = true;
     this.ws.close();
   }
 }

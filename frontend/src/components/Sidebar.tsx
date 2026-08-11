@@ -6,7 +6,18 @@ import { REQUESTER_NAME, useRole } from "@/lib/role";
 
 type RunSummary = { run_id: string; status: string; requester_name: string; created_at: string };
 
-export function Sidebar({ activeRunId }: { activeRunId?: string }) {
+export function Sidebar({
+  activeRunId,
+  onSelectPendingRun,
+}: {
+  activeRunId?: string;
+  // Approver-only: lets clicking a pending run actually load it into the
+  // live panel to act on, instead of only being viewable read-only via
+  // /history. Requester's "Recent" list still links to /history -- picking
+  // a past run back up into a live conversation isn't wired up for that
+  // side yet.
+  onSelectPendingRun?: (runId: string) => void;
+}) {
   const { role, setRole } = useRole();
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -89,20 +100,35 @@ export function Sidebar({ activeRunId }: { activeRunId?: string }) {
           {listLabel}
         </p>
         <div className="space-y-0.5">
-          {visibleRuns.map((r) => (
-            <a
-              key={r.run_id}
-              href="/history"
-              className={`block px-2.5 py-2 rounded-md text-sm truncate transition-colors ${
-                activeRunId === r.run_id
-                  ? "bg-slate-200/70 text-slate-900"
-                  : "text-slate-600 hover:bg-slate-200/40"
-              }`}
-            >
-              {r.requester_name}{" "}
-              <span className="text-slate-400 font-normal">· {r.status}</span>
-            </a>
-          ))}
+          {visibleRuns.map((r) =>
+            role === "approver" && onSelectPendingRun ? (
+              <button
+                key={r.run_id}
+                onClick={() => onSelectPendingRun(r.run_id)}
+                className={`block w-full text-left px-2.5 py-2 rounded-md text-sm truncate transition-colors ${
+                  activeRunId === r.run_id
+                    ? "bg-slate-200/70 text-slate-900"
+                    : "text-slate-600 hover:bg-slate-200/40"
+                }`}
+              >
+                {r.requester_name}{" "}
+                <span className="text-slate-400 font-normal">· {r.status}</span>
+              </button>
+            ) : (
+              <a
+                key={r.run_id}
+                href="/history"
+                className={`block px-2.5 py-2 rounded-md text-sm truncate transition-colors ${
+                  activeRunId === r.run_id
+                    ? "bg-slate-200/70 text-slate-900"
+                    : "text-slate-600 hover:bg-slate-200/40"
+                }`}
+              >
+                {r.requester_name}{" "}
+                <span className="text-slate-400 font-normal">· {r.status}</span>
+              </a>
+            )
+          )}
           {visibleRuns.length === 0 && (
             <p className="px-2 text-xs text-slate-400">{emptyLabel}</p>
           )}
