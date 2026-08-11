@@ -12,9 +12,10 @@ import json
 import google.generativeai as genai
 from google.api_core.exceptions import ResourceExhausted
 from langsmith import traceable
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception_type, stop_after_attempt
 
 from app.core.config import get_settings
+from app.services.retry_wait import wait_for_server_retry_delay
 
 _configured = False
 
@@ -31,9 +32,14 @@ def _ensure_configured() -> None:
 # quota wall we hit two sessions ago, not assumed. Retrying on anything else
 # (bad request, auth failure) would just burn 3x the time before failing the
 # same way, so this is deliberately narrow.
+#
+# Wait time comes from the server's own RetryInfo.retryDelay (Google told us
+# 12s and 53s on the two real 429s we've hit), not a fixed exponential curve --
+# a short fixed backoff burns all 3 attempts inside a still-closed quota
+# window and fails anyway, just slower and with 3x the API calls.
 @retry(
     retry=retry_if_exception_type(ResourceExhausted),
-    wait=wait_exponential(multiplier=1, min=1, max=10),
+    wait=wait_for_server_retry_delay,
     stop=stop_after_attempt(3),
     reraise=True,
 )

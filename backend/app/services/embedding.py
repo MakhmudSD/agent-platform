@@ -7,9 +7,10 @@ from __future__ import annotations
 import google.generativeai as genai
 from google.api_core.exceptions import ResourceExhausted
 from langsmith import traceable
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception_type, stop_after_attempt
 
 from app.core.config import get_settings
+from app.services.retry_wait import wait_for_server_retry_delay
 
 _configured = False
 
@@ -25,10 +26,11 @@ def _ensure_configured() -> None:
 
 
 # Same rationale as llm.py's _generate_content: ResourceExhausted is the
-# real 429 type, confirmed against an actual traceback, not assumed.
+# real 429 type, confirmed against an actual traceback, and wait time comes
+# from the server's own suggested retryDelay rather than a fixed curve.
 @retry(
     retry=retry_if_exception_type(ResourceExhausted),
-    wait=wait_exponential(multiplier=1, min=1, max=10),
+    wait=wait_for_server_retry_delay,
     stop=stop_after_attempt(3),
     reraise=True,
 )

@@ -14,7 +14,7 @@ import json
 import sys
 from unittest.mock import patch
 
-from app.db.models import Run, RunEvent
+from app.db.models import Notification, Run, RunEvent
 from app.db.session import SessionLocal
 from app.orchestrator import graph as graph_module
 from app.orchestrator.nodes import MANAGER_SYSTEM_PROMPT, RELEVANCE_SYSTEM_PROMPT
@@ -313,6 +313,14 @@ def test_reject_path() -> bool:
         ok &= "rejected" in event_types
         ok &= "finalized" not in event_types
         print(f"  'rejected' event logged, no 'finalized' event: {ok}")
+
+        notifications = db.query(Notification).filter_by(run_id=run.id).all()
+        notif_messages = [n.message for n in notifications]
+        print(f"  notifications for this run: {notif_messages}")
+        rejected_notif = [m for m in notif_messages if "was rejected" in m]
+        ok &= len(rejected_notif) == 1
+        ok &= not any("was approved" in m for m in notif_messages)
+        print(f"  exactly one 'was rejected' notification, no 'was approved' notification: {ok}")
 
         cleanup(db, run.id)
     finally:
