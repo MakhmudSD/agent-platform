@@ -8,12 +8,14 @@ of chat responses.
 from __future__ import annotations
 
 import json
+from typing import Callable
 
 import google.generativeai as genai
 from google.api_core.exceptions import ResourceExhausted
 from langsmith import traceable
 from tenacity import retry, retry_if_exception_type, stop_after_attempt
 
+from app.core import events
 from app.core.config import get_settings
 from app.services.retry_wait import wait_for_server_retry_delay
 
@@ -43,8 +45,24 @@ def _ensure_configured() -> None:
     stop=stop_after_attempt(3),
     reraise=True,
 )
-def _generate_content(model: "genai.GenerativeModel", user_content: str, generation_config: "genai.GenerationConfig"):
-    return model.generate_content(user_content, generation_config=generation_config)
+def _generate_content(
+    model: "genai.GenerativeModel",
+    user_content: str,
+    generation_config: "genai.GenerationConfig",
+    on_token: Callable[[str], None] | None = None,
+):
+    if on_token is None:
+        return model.generate_content(user_content, generation_config=generation_config)
+
+    # Streamed path: consumed *inside* this function, not by the caller, so
+    # a 429 raised mid-stream still surfaces inside the @retry frame above
+    # instead of escaping it -- a generator handed back unconsumed would
+    # silently stop retrying rate limits the moment a caller iterates it.
+    response = model.generate_content(user_content, generation_config=generation_config, stream=True)
+    for chunk in response:
+        if chunk.text:
+            on_token(chunk.text)
+    return response
 
 
 @traceable(run_type="llm", name="gemini_structured_call")
@@ -56,9 +74,18 @@ def structured_call(system_prompt: str, user_content: str) -> dict:
         model_name=settings.llm_model,
         system_instruction=system_prompt,
     )
+
+    run_id = events.current_run_id()
+    node = events.current_node()
+    on_token = None
+    if run_id:
+        def on_token(text: str, _run_id: str = run_id, _node: str | None = node) -> None:
+            events.emit(_run_id, {"type": "llm_token", "node": _node, "text": text})
+
     response = _generate_content(
         model,
         user_content,
         genai.GenerationConfig(temperature=0.2, response_mime_type="application/json"),
+        on_token=on_token,
     )
     return json.loads(response.text)

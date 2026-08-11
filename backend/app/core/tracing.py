@@ -24,6 +24,8 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
 from opentelemetry.trace import Status, StatusCode
 
+from app.core import events
+
 _provider = TracerProvider(resource=Resource.create({"service.name": "agent-platform-backend"}))
 # SimpleSpanProcessor exports each span synchronously as it ends, so it
 # shows up in the console immediately -- right for "prove this works right
@@ -53,6 +55,7 @@ def traced_node(name: str) -> Callable:
     def decorator(fn: Callable) -> Callable:
         @functools.wraps(fn)
         def wrapper(state, config):
+            run_id = state.get("run_id", "")
             # record_exception/set_status_on_exception=False: the default
             # auto-handling would run *after* our except block below and
             # clobber the OK status we set for GraphInterrupt back to ERROR.
@@ -62,23 +65,31 @@ def traced_node(name: str) -> Callable:
                 f"node.{name}", record_exception=False, set_status_on_exception=False,
             ) as span:
                 span.set_attribute("graph.node", name)
-                span.set_attribute("run.id", state.get("run_id", ""))
+                span.set_attribute("run.id", run_id)
+                events.emit(run_id, {"type": "node_started", "node": name})
+                events.set_current(run_id, name)
                 try:
                     result = fn(state, config)
                 except GraphInterrupt:
                     # LangGraph's normal pause-for-human-input mechanism,
                     # implemented as a raised exception -- not a real
                     # failure. Must still propagate (LangGraph's own
-                    # machinery catches it), just not as an error span.
+                    # machinery catches it), just not as an error span. Not
+                    # emitting node_finished here on purpose: the node
+                    # hasn't finished, it's suspended.
                     span.set_status(Status(StatusCode.OK))
                     raise
                 except Exception as exc:
                     span.record_exception(exc)
                     span.set_status(Status(StatusCode.ERROR, str(exc)))
+                    events.emit(run_id, {"type": "node_failed", "node": name, "error": str(exc)})
                     raise
                 else:
                     span.set_status(Status(StatusCode.OK))
+                    events.emit(run_id, {"type": "node_finished", "node": name})
                     return result
+                finally:
+                    events.clear_current()
 
         return wrapper
 

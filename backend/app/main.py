@@ -5,6 +5,7 @@ from app.core.config import get_settings
 from app.core.tracing import instrument_app
 from app.routes.notifications import router as notifications_router
 from app.routes.runs import router as runs_router
+from app.routes.ws_runs import router as ws_runs_router
 
 app = FastAPI(title="Agent Platform — Employee Request Assistant")
 
@@ -21,6 +22,7 @@ app.add_middleware(
 
 app.include_router(runs_router)
 app.include_router(notifications_router)
+app.include_router(ws_runs_router)
 instrument_app(app)
 
 

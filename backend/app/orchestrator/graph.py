@@ -22,6 +22,8 @@ Two persistence layers, deliberately not merged:
 """
 from __future__ import annotations
 
+from typing import Callable
+
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
@@ -138,10 +140,20 @@ def _run_and_translate(db: Session, run: Run, invoke_input) -> Card:
     return _card_from_final_state(run, result)
 
 
-def start_run(db: Session, requester_name: str, initial_message: str) -> tuple[Run, Card]:
+def start_run(
+    db: Session,
+    requester_name: str,
+    initial_message: str,
+    on_run_created: Callable[[Run], None] | None = None,
+) -> tuple[Run, Card]:
     run = Run(requester_name=requester_name, status=RunStatus.GATHERING, draft={})
     db.add(run)
     db.flush()  # get run.id before logging / using it as the graph thread_id
+    if on_run_created:
+        # Lets a caller (the WS route) register a live-event sink for this
+        # run's id before any node runs and starts emitting -- run.id isn't
+        # known until this point, so it can't be registered any earlier.
+        on_run_created(run)
     log_event(db, run, "run_started", {"initial_message": initial_message})
 
     initial_state: OrchestratorState = {
