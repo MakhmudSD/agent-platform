@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 
 import google.generativeai as genai
+from langsmith import traceable
 
 from app.core.config import get_settings
 
@@ -23,6 +24,7 @@ def _ensure_configured() -> None:
         _configured = True
 
 
+@traceable(run_type="llm", name="gemini_structured_call")
 def structured_call(system_prompt: str, user_content: str) -> dict:
     """One LLM call, forced JSON output. Caller validates shape with pydantic."""
     settings = get_settings()

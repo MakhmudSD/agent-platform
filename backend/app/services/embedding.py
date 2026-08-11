@@ -5,6 +5,7 @@ mirrors the "provider is a config value, not a code path" principle.
 from __future__ import annotations
 
 import google.generativeai as genai
+from langsmith import traceable
 
 from app.core.config import get_settings
 
@@ -21,6 +22,7 @@ def _ensure_configured() -> None:
         _configured = True
 
 
+@traceable(run_type="embedding", name="gemini_embed_text")
 def embed_text(text: str) -> list[float]:
     settings = get_settings()
     _ensure_configured()
