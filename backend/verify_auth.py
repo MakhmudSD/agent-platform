@@ -63,10 +63,27 @@ def main() -> bool:
 
     dup_client = httpx.Client(timeout=150)
     dup_res = dup_client.post(f"{BASE}/auth/signup", json={
-        "email": probe_email, "name": "Dup", "password": "x", "role": "requester",
+        "email": probe_email, "name": "Dup", "password": "testpass123", "role": "requester",
     })
     check("Duplicate signup rejected (409)", dup_res.status_code == 409)
     dup_client.close()
+
+    short_pw_client = httpx.Client(timeout=150)
+    short_pw_res = short_pw_client.post(f"{BASE}/auth/signup", json={
+        "email": "shortpw-probe@acme-demo.com", "name": "Short", "password": "x",
+    })
+    check("Signup with <8 char password rejected (422)", short_pw_res.status_code == 422)
+    short_pw_client.close()
+
+    self_admin_client = httpx.Client(timeout=150)
+    self_admin_res = self_admin_client.post(f"{BASE}/auth/signup", json={
+        "email": "selfadmin-probe@acme-demo.com", "name": "Self Admin", "password": "testpass123", "role": "admin",
+    })
+    check(
+        "Client-supplied role='admin' on signup is ignored (account created as requester)",
+        self_admin_res.status_code == 200 and self_admin_res.json()["role"] == "requester",
+    )
+    self_admin_client.close()
 
     wrong_pw_client = httpx.Client(timeout=150)
     wrong_res = wrong_pw_client.post(f"{BASE}/auth/login", json={"email": probe_email, "password": "wrong"})

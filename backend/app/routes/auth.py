@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user
@@ -16,8 +16,12 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 class SignupRequest(BaseModel):
     email: EmailStr
     name: str
-    password: str
-    role: UserRole = UserRole.REQUESTER
+    password: str = Field(min_length=8)
+    # No client-supplied role -- self-service signup always creates a
+    # requester. Approver/admin accounts are provisioned out-of-band (seed
+    # script or a future admin-only mutation), same reasoning as admin.py's
+    # decision not to expose role mutation: letting a signup body pick its
+    # own role is a privilege-escalation surface, not a convenience.
 
 
 class LoginRequest(BaseModel):
@@ -47,7 +51,7 @@ def _set_session_cookie(response: Response, user: User) -> None:
 def signup(body: SignupRequest, response: Response, db: Session = Depends(get_db)):
     if db.query(User).filter_by(email=body.email).first() is not None:
         raise HTTPException(status_code=409, detail="An account with this email already exists")
-    user = User(email=body.email, name=body.name, password_hash=hash_password(body.password), role=body.role)
+    user = User(email=body.email, name=body.name, password_hash=hash_password(body.password), role=UserRole.REQUESTER)
     db.add(user)
     db.commit()
     db.refresh(user)

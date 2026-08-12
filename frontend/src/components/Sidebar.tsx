@@ -5,7 +5,7 @@ import { api, Notification } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Logo } from "@/components/Logo";
 
-type RunSummary = { run_id: string; status: string; requester_name: string; created_at: string };
+type RunSummary = { run_id: string; status: string; requester_name: string; user_id: string | null; created_at: string };
 
 export function Sidebar({
   activeRunId,
@@ -39,9 +39,13 @@ export function Sidebar({
     api.listNotifications().then(setNotifications).catch(() => {});
   }, [user, activeRunId, refreshKey]);
 
+  // Prefer the real user_id match -- requester_name is a free-text display
+  // name and two accounts can share one, which would otherwise leak runs
+  // across accounts. Legacy rows predating auth have user_id === null, so
+  // those still fall back to name matching rather than becoming invisible.
   const visibleRuns = isApprover
     ? runs.filter((r) => r.status === "awaiting_approval")
-    : runs.filter((r) => r.requester_name === user?.name);
+    : runs.filter((r) => (r.user_id ? r.user_id === user?.id : r.requester_name === user?.name));
 
   const listLabel = isApprover ? "Pending approval" : "Recent";
   const emptyLabel = isApprover ? "Nothing awaiting approval." : "No requests yet.";
@@ -55,7 +59,9 @@ export function Sidebar({
     if (n.read) return false;
     if (isApprover) return n.message.startsWith("Awaiting approval:");
     const run = runById[n.run_id];
-    return n.message.startsWith("Your request") && run?.requester_name === user?.name;
+    if (!run) return false;
+    const owned = run.user_id ? run.user_id === user?.id : run.requester_name === user?.name;
+    return n.message.startsWith("Your request") && owned;
   });
 
   async function clearNotifications() {

@@ -86,6 +86,6 @@ def list_runs(user: User = Depends(get_current_user), db: Session = Depends(get_
     runs = db.query(Run).order_by(Run.created_at.desc()).limit(50).all()
     return [
         {"run_id": r.id, "status": r.status, "requester_name": r.requester_name,
-         "created_at": r.created_at.isoformat()}
+         "user_id": r.user_id, "created_at": r.created_at.isoformat()}
         for r in runs
     ]

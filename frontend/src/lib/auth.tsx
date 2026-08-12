@@ -1,13 +1,13 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
-import { api, AuthUser, Role } from "@/lib/api";
+import { api, AuthUser } from "@/lib/api";
 
 type AuthContextValue = {
   user: AuthUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, name: string, password: string, role: Role) => Promise<void>;
+  signup: (email: string, name: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 };
 
@@ -26,8 +26,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(loggedIn);
   }
 
-  async function signup(email: string, name: string, password: string, role: Role) {
-    const created = await api.signup(email, name, password, role);
+  async function signup(email: string, name: string, password: string) {
+    const created = await api.signup(email, name, password);
     setUser(created);
   }
 

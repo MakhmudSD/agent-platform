@@ -49,8 +49,10 @@ async function get<T>(path: string): Promise<T> {
 }
 
 export const api = {
-  signup: (email: string, name: string, password: string, role: Role) =>
-    post<AuthUser>("/auth/signup", { email, name, password, role }),
+  // No role param -- self-service signup always creates a requester
+  // (backend enforces this server-side regardless of what's sent).
+  signup: (email: string, name: string, password: string) =>
+    post<AuthUser>("/auth/signup", { email, name, password }),
 
   login: (email: string, password: string) => post<AuthUser>("/auth/login", { email, password }),
 

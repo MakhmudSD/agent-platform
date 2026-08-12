@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Logo } from "@/components/Logo";
-import { Role } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
 export default function LoginPage() {
@@ -14,7 +13,6 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<Role>("requester");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -27,7 +25,7 @@ export default function LoginPage() {
       if (mode === "login") {
         await login(email, password);
       } else {
-        await signup(email, name, password, role);
+        await signup(email, name, password);
       }
       router.push("/");
     } catch (err: any) {
@@ -90,22 +88,6 @@ export default function LoginPage() {
             />
           </label>
 
-          {mode === "signup" && (
-            <label className="block">
-              <span className="block text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 mb-1">
-                Role
-              </span>
-              <select
-                value={role}
-                onChange={(e) => setRole(e.target.value as Role)}
-                className="w-full text-sm rounded-md border border-slate-200 bg-white px-3 py-2 text-slate-900 outline-none focus:border-slate-400"
-              >
-                <option value="requester">Requester</option>
-                <option value="approver">Approver</option>
-              </select>
-            </label>
-          )}
-
           {error && <p className="text-xs text-red-600">{error}</p>}
 
           <button
@@ -134,6 +116,12 @@ export default function LoginPage() {
             </>
           )}
         </p>
+
+        {mode === "signup" && (
+          <p className="text-center text-[11px] text-slate-400 mt-4">
+            New accounts start as Requesters. Approver access is granted separately.
+          </p>
+        )}
 
         <p className="text-center text-[11px] text-slate-400 mt-6">
           Demo accounts: requester@acme-demo.com / approver@acme-demo.com — password demo1234
