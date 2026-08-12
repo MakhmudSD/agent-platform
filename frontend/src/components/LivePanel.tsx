@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { AuditLogEntry } from "@/lib/ws";
 
-const NODE_LABELS: Record<string, string> = {
+export const NODE_LABELS: Record<string, string> = {
   manager: "Deciding next step",
   intake: "Gathering request details",
   await_message: "Waiting on you",
@@ -11,6 +11,25 @@ const NODE_LABELS: Record<string, string> = {
   draft: "Drafting the request",
   interrupt_for_approval: "Waiting on approver",
   apply_approval: "Applying decision",
+};
+
+// Audit trail otherwise shows raw backend event_type strings
+// (manager_decision, policy_retrieved, ...) verbatim -- fine for an
+// engineer reading logs, confusing for anyone else watching the panel.
+// Raw value stays available via the row's title tooltip.
+const EVENT_LABELS: Record<string, string> = {
+  run_started: "Request received",
+  manager_decision: "Decided next step",
+  draft_updated: "Draft updated",
+  clarifying_question_asked: "Asked a clarifying question",
+  user_message: "You replied",
+  state_transition: "Moved to next stage",
+  policy_retrieved: "Checked company policy",
+  draft_finalized_for_review: "Draft finalized for review",
+  approval_requested: "Sent for approval",
+  approved: "Approved",
+  rejected: "Rejected",
+  finalized: "Finalized and submitted",
 };
 
 export function LivePanel({
@@ -33,8 +52,8 @@ export function LivePanel({
   }, [auditLog.length]);
 
   return (
-    <aside className="w-80 shrink-0 h-screen sticky top-0 flex flex-col border-l border-black/5 bg-[#FAFAF8]">
-      <div className="px-4 py-4 border-b border-black/5">
+    <aside className="w-80 shrink-0 h-screen sticky top-0 flex flex-col border-l border-slate-200 bg-slate-50">
+      <div className="px-4 py-4 border-b border-slate-200">
         <p className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 mb-2">
           Live status
         </p>
@@ -56,7 +75,7 @@ export function LivePanel({
       </div>
 
       {liveDraft && (
-        <div className="px-4 py-4 border-b border-black/5">
+        <div className="px-4 py-4 border-b border-slate-200">
           <p className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 mb-2">
             Draft (live)
           </p>
@@ -82,11 +101,11 @@ export function LivePanel({
         ) : (
           <ul className="space-y-1.5">
             {auditLog.map((entry, i) => (
-              <li key={i} className="text-xs text-slate-600 flex items-start gap-1.5">
+              <li key={i} className="text-xs text-slate-600 flex items-start gap-1.5" title={entry.event_type}>
                 <span className="text-slate-300 mt-0.5 shrink-0">
                   {new Date(entry.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                 </span>
-                <span className="font-mono text-[11px]">{entry.event_type}</span>
+                <span>{EVENT_LABELS[entry.event_type] ?? entry.event_type}</span>
               </li>
             ))}
             <div ref={auditEndRef} />

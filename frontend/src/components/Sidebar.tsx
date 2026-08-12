@@ -60,7 +60,7 @@ export function Sidebar({
   }
 
   return (
-    <aside className="w-64 shrink-0 h-screen sticky top-0 flex flex-col border-r border-black/5 bg-[#F7F5F0]">
+    <aside className="w-64 shrink-0 h-screen sticky top-0 flex flex-col border-r border-slate-200 bg-[#F7F5F0]">
       <div className="px-4 py-4 space-y-3">
         <a href="/" className="flex items-center gap-2">
           <span className="w-6 h-6 rounded-md bg-slate-900 text-white text-xs font-bold flex items-center justify-center">

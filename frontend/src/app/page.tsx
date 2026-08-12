@@ -5,7 +5,7 @@ import { api, Card } from "@/lib/api";
 import { AuditLogEntry, LiveEvent, RunSocket } from "@/lib/ws";
 import { CardRenderer } from "@/components/CardRenderer";
 import { Sidebar } from "@/components/Sidebar";
-import { LivePanel } from "@/components/LivePanel";
+import { LivePanel, NODE_LABELS } from "@/components/LivePanel";
 import { REQUESTER_NAME, useRole } from "@/lib/role";
 
 type Turn = { from: "user" | "agent"; card?: Card; text?: string };
@@ -197,8 +197,9 @@ export default function Home() {
                   </div>
                 ))}
                 {busy && (
-                  <div className="max-w-[85%] text-sm text-slate-400 px-1">
-                    {liveNode ? `Working: ${liveNode}...` : "Working..."}
+                  <div className="max-w-[85%] flex items-center gap-2 text-sm text-slate-400 px-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse shrink-0" />
+                    {liveNode ? (NODE_LABELS[liveNode] ?? liveNode) : "Working..."}
                   </div>
                 )}
               </div>
