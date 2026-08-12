@@ -1,18 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { api, Card } from "@/lib/api";
 import { AuditLogEntry, LiveEvent, RunSocket } from "@/lib/ws";
 import { CardRenderer } from "@/components/CardRenderer";
 import { Sidebar } from "@/components/Sidebar";
 import { LivePanel, NODE_LABELS } from "@/components/LivePanel";
-import { REQUESTER_NAME, useRole } from "@/lib/role";
+import { useAuth } from "@/lib/auth";
 
 type Turn = { from: "user" | "agent"; card?: Card; text?: string };
 
 export default function Home() {
-  const { role } = useRole();
-  const isApprover = role === "approver";
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
+  const isApprover = user?.role === "approver" || user?.role === "admin";
 
   const [runId, setRunId] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -36,6 +38,13 @@ export default function Home() {
   const socketRef = useRef<RunSocket | null>(null);
 
   useEffect(() => {
+    if (!authLoading && !user) router.push("/login");
+  }, [authLoading, user, router]);
+
+  useEffect(() => {
+    // /ws/runs authenticates off the session cookie at connect time -- opening
+    // it before login resolves would just get rejected and closed immediately.
+    if (!user) return;
     const socket = new RunSocket(handleEvent, () => {
       setWsError("Connection to the server was lost. Refresh the page to reconnect.");
       setBusy(false);
@@ -44,24 +53,7 @@ export default function Home() {
     socketRef.current = socket;
     return () => socket.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Switching roles always starts fresh, never resumes whatever run
-  // happened to be loaded -- without this, a stale runId from one role
-  // (e.g. a run an Approver just acted on) carries into the other role and
-  // the next action targets the wrong run entirely.
-  useEffect(() => {
-    setRunId(null);
-    setStatus(null);
-    setTurns([]);
-    setBusy(false);
-    setWsError(null);
-    setLiveNode(null);
-    setLiveDraft(null);
-    setStreamText("");
-    setAuditLog([]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role]);
+  }, [user?.id]);
 
   function handleEvent(event: LiveEvent) {
     switch (event.type) {
@@ -109,7 +101,7 @@ export default function Home() {
     if (runId) {
       socketRef.current.send({ action: "message", run_id: runId, message });
     } else {
-      socketRef.current.send({ action: "start", requester_name: REQUESTER_NAME, message });
+      socketRef.current.send({ action: "start", message });
     }
   }
 
@@ -155,6 +147,10 @@ export default function Home() {
     (t) => t.card?.type === "approval_request"
   );
   const isAwaitingApproval = status === "awaiting_approval";
+
+  if (authLoading || !user) {
+    return <div className="min-h-screen bg-white" />;
+  }
 
   return (
     <div className="flex min-h-screen bg-white">
@@ -217,8 +213,7 @@ export default function Home() {
           <div className="max-w-3xl mx-auto">
             {isApprover ? (
               <p className="text-center text-sm text-slate-400">
-                Approvers review existing requests and can't start new ones. Switch to
-                Requester to submit a request.
+                Approvers review existing requests and can't start new ones.
               </p>
             ) : (
               <div className="flex items-center gap-2 rounded-full border border-slate-200 shadow-sm px-2 py-1.5 focus-within:border-slate-400 transition-colors">

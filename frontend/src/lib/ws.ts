@@ -15,7 +15,9 @@ export type LiveEvent =
 export type AuditLogEntry = { event_type: string; payload: Record<string, any>; ts: number };
 
 export type RunAction =
-  | { action: "start"; requester_name: string; message: string }
+  // requester_name deliberately absent -- the server derives it from the
+  // session cookie now (routes/ws_runs.py), never from client input.
+  | { action: "start"; message: string }
   | { action: "message"; run_id: string; message: string }
   | { action: "approval"; run_id: string; approved: boolean; reason?: string };
 

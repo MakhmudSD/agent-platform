@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { Sidebar } from "@/components/Sidebar";
 
 type RunSummary = { run_id: string; status: string; requester_name: string; created_at: string };
@@ -9,12 +11,23 @@ type RunEvent = { type: string; payload: Record<string, any>; created_at: string
 type RunDetail = { run_id: string; status: string; requester_name: string; draft: Record<string, any>; events: RunEvent[] };
 
 export default function History() {
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [selected, setSelected] = useState<RunDetail | null>(null);
 
   useEffect(() => {
-    api.listRuns().then(setRuns);
-  }, []);
+    if (!authLoading && !user) router.push("/login");
+  }, [authLoading, user, router]);
+
+  useEffect(() => {
+    if (!user) return;
+    api.listRuns().then(setRuns).catch(() => {});
+  }, [user]);
+
+  if (authLoading || !user) {
+    return <div className="min-h-screen bg-white" />;
+  }
 
   async function openRun(runId: string) {
     const detail = await api.getRun(runId);

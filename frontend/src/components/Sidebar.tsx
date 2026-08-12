@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { api, Notification } from "@/lib/api";
-import { REQUESTER_NAME, useRole } from "@/lib/role";
+import { useAuth } from "@/lib/auth";
+import { Logo } from "@/components/Logo";
 
 type RunSummary = { run_id: string; status: string; requester_name: string; created_at: string };
 
@@ -25,33 +26,36 @@ export function Sidebar({
   // refetch.
   refreshKey?: number;
 }) {
-  const { role, setRole } = useRole();
+  const { user, logout } = useAuth();
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
+  const role = user?.role;
+  const isApprover = role === "approver" || role === "admin";
+
   useEffect(() => {
+    if (!user) return;
     api.listRuns().then(setRuns).catch(() => {});
     api.listNotifications().then(setNotifications).catch(() => {});
-  }, [role, activeRunId, refreshKey]);
+  }, [user, activeRunId, refreshKey]);
 
-  const visibleRuns =
-    role === "approver"
-      ? runs.filter((r) => r.status === "awaiting_approval")
-      : runs.filter((r) => r.requester_name === REQUESTER_NAME);
+  const visibleRuns = isApprover
+    ? runs.filter((r) => r.status === "awaiting_approval")
+    : runs.filter((r) => r.requester_name === user?.name);
 
-  const listLabel = role === "approver" ? "Pending approval" : "Recent";
-  const emptyLabel = role === "approver" ? "Nothing awaiting approval." : "No requests yet.";
+  const listLabel = isApprover ? "Pending approval" : "Recent";
+  const emptyLabel = isApprover ? "Nothing awaiting approval." : "No requests yet.";
 
-  // Notifications carry no role/user column (no real identity system yet) --
-  // "relevant to this role" is decided the same way the run list above is:
-  // by message shape (set at creation in nodes.py) and, for the Requester
-  // side, by joining run_id against the runs list already fetched.
+  // Notifications carry no user_id column yet -- "relevant to this user" is
+  // still decided by message shape + name-matching, same technique the run
+  // list above uses. A real per-user column (now that accounts exist) is
+  // the natural next step, just not done in this pass.
   const runById = Object.fromEntries(runs.map((r) => [r.run_id, r]));
   const relevantUnread = notifications.filter((n) => {
     if (n.read) return false;
-    if (role === "approver") return n.message.startsWith("Awaiting approval:");
+    if (isApprover) return n.message.startsWith("Awaiting approval:");
     const run = runById[n.run_id];
-    return n.message.startsWith("Your request") && run?.requester_name === REQUESTER_NAME;
+    return n.message.startsWith("Your request") && run?.requester_name === user?.name;
   });
 
   async function clearNotifications() {
@@ -63,9 +67,7 @@ export function Sidebar({
     <aside className="w-64 shrink-0 h-screen sticky top-0 flex flex-col border-r border-slate-200 bg-[#F7F5F0]">
       <div className="px-4 py-4 space-y-3">
         <a href="/" className="flex items-center gap-2">
-          <span className="w-6 h-6 rounded-md bg-slate-900 text-white text-xs font-bold flex items-center justify-center">
-            R
-          </span>
+          <Logo size={24} />
           <span className="text-sm font-semibold text-slate-900">Request Assistant</span>
           {relevantUnread.length > 0 && (
             <button
@@ -78,19 +80,28 @@ export function Sidebar({
           )}
         </a>
 
-        <label className="block">
-          <span className="block text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 mb-1">
-            Acting as
-          </span>
-          <select
-            value={role}
-            onChange={(e) => setRole(e.target.value as "requester" | "approver")}
-            className="w-full text-sm rounded-md border border-slate-200 bg-white px-2 py-1.5 text-slate-900"
+        {user && (
+          <div className="flex items-center justify-between rounded-md border border-slate-200 bg-white px-2.5 py-2">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-slate-900 truncate">{user.name}</p>
+              <p className="text-[10.5px] uppercase tracking-wide text-slate-400">{user.role}</p>
+            </div>
+            <button
+              onClick={logout}
+              className="text-xs text-slate-400 hover:text-slate-700 shrink-0 ml-2"
+            >
+              Sign out
+            </button>
+          </div>
+        )}
+        {role === "admin" && (
+          <a
+            href="/admin"
+            className="block text-xs text-slate-500 hover:text-slate-700 px-0.5"
           >
-            <option value="requester">Requester</option>
-            <option value="approver">Approver</option>
-          </select>
-        </label>
+            Admin dashboard →
+          </a>
+        )}
       </div>
 
       <div className="px-3">
@@ -108,7 +119,7 @@ export function Sidebar({
         </p>
         <div className="space-y-0.5">
           {visibleRuns.map((r) =>
-            role === "approver" && onSelectPendingRun ? (
+            isApprover && onSelectPendingRun ? (
               <button
                 key={r.run_id}
                 onClick={() => onSelectPendingRun(r.run_id)}
@@ -142,7 +153,7 @@ export function Sidebar({
         </div>
       </div>
 
-      <div className="px-3 py-4 border-t border-black/5">
+      <div className="px-3 py-4 border-t border-slate-200">
         <a href="/history" className="text-xs text-slate-500 hover:text-slate-700">
           View audit trail →
         </a>

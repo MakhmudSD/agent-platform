@@ -1,5 +1,5 @@
 import "./globals.css";
-import { RoleProvider } from "@/lib/role";
+import { AuthProvider } from "@/lib/auth";
 
 export const metadata = {
   title: "Employee Request Assistant",
@@ -9,7 +9,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className="font-sans text-slate-900">
-        <RoleProvider>{children}</RoleProvider>
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );

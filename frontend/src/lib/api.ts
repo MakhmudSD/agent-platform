@@ -18,19 +18,47 @@ export type Notification = {
   created_at: string;
 };
 
+export type Role = "requester" | "approver" | "admin";
+export type AuthUser = { id: string; email: string; name: string; role: Role };
+
+// credentials: "include" on every call -- the backend sets an httpOnly
+// session cookie (routes/auth.py) and every protected route reads it back;
+// without this, cross-port fetches (frontend :3000, backend :8000) never
+// attach the cookie and every request looks anonymous.
 async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`API error ${res.status} on ${path}`);
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(detail?.detail || `API error ${res.status} on ${path}`);
+  }
+  return res.json();
+}
+
+async function get<T>(path: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, { credentials: "include" });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null);
+    throw new Error(detail?.detail || `API error ${res.status} on ${path}`);
+  }
   return res.json();
 }
 
 export const api = {
-  startRun: (requester_name: string, message: string) =>
-    post<RunResponse>("/runs", { requester_name, message }),
+  signup: (email: string, name: string, password: string, role: Role) =>
+    post<AuthUser>("/auth/signup", { email, name, password, role }),
+
+  login: (email: string, password: string) => post<AuthUser>("/auth/login", { email, password }),
+
+  logout: () => post<{ ok: boolean }>("/auth/logout", {}),
+
+  me: () => get<AuthUser>("/auth/me"),
+
+  startRun: (message: string) => post<RunResponse>("/runs", { message }),
 
   sendMessage: (runId: string, message: string) =>
     post<RunResponse>(`/runs/${runId}/messages`, { message }),
@@ -38,23 +66,13 @@ export const api = {
   respondToApproval: (runId: string, approved: boolean, reason?: string) =>
     post<RunResponse>(`/runs/${runId}/approval`, { approved, reason: reason ?? null }),
 
-  getRun: async (runId: string) => {
-    const res = await fetch(`${API_BASE}/runs/${runId}`);
-    if (!res.ok) throw new Error(`API error ${res.status}`);
-    return res.json();
-  },
+  getRun: (runId: string) => get<any>(`/runs/${runId}`),
 
-  listRuns: async () => {
-    const res = await fetch(`${API_BASE}/runs`);
-    if (!res.ok) throw new Error(`API error ${res.status}`);
-    return res.json();
-  },
+  listRuns: () => get<any[]>("/runs"),
 
-  listNotifications: async (): Promise<Notification[]> => {
-    const res = await fetch(`${API_BASE}/notifications`);
-    if (!res.ok) throw new Error(`API error ${res.status}`);
-    return res.json();
-  },
+  listNotifications: () => get<Notification[]>("/notifications"),
+
+  listUsers: () => get<{ id: string; email: string; name: string; role: Role; created_at: string }[]>("/admin/users"),
 
   markNotificationRead: (id: string) => post<{ id: string; read: boolean }>(`/notifications/${id}/read`, {}),
 };
