@@ -64,7 +64,9 @@ export function LivePanel({
             {Object.entries(liveDraft).map(([key, value]) => (
               <div key={key} className="contents">
                 <dt className="text-slate-400 capitalize">{key.replace(/_/g, " ")}</dt>
-                <dd className="text-slate-800 font-medium truncate">{value ? String(value) : "—"}</dd>
+                <dd className="text-slate-800 font-medium truncate" title={value ? String(value) : undefined}>
+                  {value ? String(value) : "—"}
+                </dd>
               </div>
             ))}
           </dl>

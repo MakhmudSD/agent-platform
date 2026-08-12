@@ -9,6 +9,7 @@ type RunSummary = { run_id: string; status: string; requester_name: string; crea
 export function Sidebar({
   activeRunId,
   onSelectPendingRun,
+  refreshKey,
 }: {
   activeRunId?: string;
   // Approver-only: lets clicking a pending run actually load it into the
@@ -17,6 +18,12 @@ export function Sidebar({
   // a past run back up into a live conversation isn't wired up for that
   // side yet.
   onSelectPendingRun?: (runId: string) => void;
+  // Bumped by the parent whenever a run's status actually changes (a WS
+  // "result" lands) -- role/activeRunId alone don't change just because a
+  // run got approved/rejected, so without this the list would show a
+  // just-resolved run as still pending until something else triggered a
+  // refetch.
+  refreshKey?: number;
 }) {
   const { role, setRole } = useRole();
   const [runs, setRuns] = useState<RunSummary[]>([]);
@@ -25,7 +32,7 @@ export function Sidebar({
   useEffect(() => {
     api.listRuns().then(setRuns).catch(() => {});
     api.listNotifications().then(setNotifications).catch(() => {});
-  }, [role, activeRunId]);
+  }, [role, activeRunId, refreshKey]);
 
   const visibleRuns =
     role === "approver"

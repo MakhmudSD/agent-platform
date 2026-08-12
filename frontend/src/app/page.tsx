@@ -28,6 +28,10 @@ export default function Home() {
   const [liveDraft, setLiveDraft] = useState<Record<string, any> | null>(null);
   const [streamText, setStreamText] = useState("");
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
+  // Bumped whenever a WS "result" lands, so Sidebar knows to refetch its
+  // pending-approval list -- otherwise a just-approved/rejected run lingers
+  // in that list until role or activeRunId happens to change.
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const socketRef = useRef<RunSocket | null>(null);
 
@@ -41,6 +45,23 @@ export default function Home() {
     return () => socket.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Switching roles always starts fresh, never resumes whatever run
+  // happened to be loaded -- without this, a stale runId from one role
+  // (e.g. a run an Approver just acted on) carries into the other role and
+  // the next action targets the wrong run entirely.
+  useEffect(() => {
+    setRunId(null);
+    setStatus(null);
+    setTurns([]);
+    setBusy(false);
+    setWsError(null);
+    setLiveNode(null);
+    setLiveDraft(null);
+    setStreamText("");
+    setAuditLog([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role]);
 
   function handleEvent(event: LiveEvent) {
     switch (event.type) {
@@ -67,6 +88,7 @@ export default function Home() {
         setTurns((t) => [...t, { from: "agent", card: event.card }]);
         setBusy(false);
         setLiveNode(null);
+        setRefreshKey((k) => k + 1);
         break;
       case "error":
         setWsError(event.detail);
@@ -136,7 +158,7 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen bg-white">
-      <Sidebar activeRunId={runId ?? undefined} onSelectPendingRun={handleSelectPendingRun} />
+      <Sidebar activeRunId={runId ?? undefined} onSelectPendingRun={handleSelectPendingRun} refreshKey={refreshKey} />
 
       <div className="flex-1 flex flex-col h-screen">
         <div className="flex-1 overflow-y-auto">
@@ -144,11 +166,11 @@ export default function Home() {
             {turns.length === 0 ? (
               <div className="pt-24 text-center">
                 <h1 className="text-2xl font-semibold text-slate-900 mb-2">
-                  {isApprover ? "Nothing to review yet" : "What do you need approved?"}
+                  {isApprover ? "Select a request to review" : "What do you need approved?"}
                 </h1>
                 <p className="text-slate-500 text-sm max-w-md mx-auto">
                   {isApprover
-                    ? "Requests awaiting your approval will appear in the sidebar queue."
+                    ? "Choose a request from the sidebar queue to see its details and approve or reject it."
                     : 'Describe your request. I\'ll ask what\'s missing, check company policy, and route it for approval. Try: "I need to expense a conference ticket, about $2400".'}
                 </p>
               </div>
