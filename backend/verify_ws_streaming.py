@@ -15,17 +15,30 @@ import asyncio
 import json
 import sys
 
+import httpx
 import websockets
 
 WS_URL = "ws://localhost:8000/ws/runs"
+API_BASE = "http://localhost:8000"
+
+
+def login_cookie_header(email: str, password: str) -> str:
+    """/ws/runs now requires the same session cookie the REST routes do
+    (see routes/ws_runs.py's _authenticate) -- log in over plain HTTP first
+    and hand the resulting cookie to the WS handshake's headers, since a
+    WS client doesn't share a cookie jar with an httpx client."""
+    res = httpx.post(f"{API_BASE}/auth/login", json={"email": email, "password": password}, timeout=30)
+    res.raise_for_status()
+    token = res.cookies["session"]
+    return f"session={token}"
 
 
 async def run_start_and_collect() -> list[dict]:
     events: list[dict] = []
-    async with websockets.connect(WS_URL) as ws:
+    cookie = login_cookie_header("requester@acme-demo.com", "demo1234")
+    async with websockets.connect(WS_URL, additional_headers={"Cookie": cookie}) as ws:
         await ws.send(json.dumps({
             "action": "start",
-            "requester_name": "WS Verification Bot",
             "message": "I need to expense a conference ticket, about $2400, for the Engineering team.",
         }))
         while True:

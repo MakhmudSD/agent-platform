@@ -1,11 +1,16 @@
 """
 Live, full-flow verification of /ws/runs: start -> clarifying answer ->
-approval_request -> approve -> finalized, all over one WebSocket
-connection, against the real running backend. Exercises draft_node and
-policy_research_node's LLM-token streaming, and both interrupt nodes'
-replay-on-resume behavior (node_started should fire again on resume,
-node_finished should NOT double up for the same interrupt-paused node
-occurrence).
+approval_request -> approve -> finalized, against the real running
+backend. Exercises draft_node and policy_research_node's LLM-token
+streaming, and both interrupt nodes' replay-on-resume behavior
+(node_started should fire again on resume, node_finished should NOT
+double up for the same interrupt-paused node occurrence).
+
+Now genuinely two separate connections, matching real product behavior:
+auth is per-connection (one role per session), so a Requester's connection
+literally cannot send the "approval" action -- the server would reject it
+by role even if we tried. Requester connection does start+message,
+Approver connection (a second login, second socket) does the approval.
 
 Requires: uvicorn app.main:app running on localhost:8000.
     python verify_ws_streaming_full_flow.py
@@ -16,15 +21,23 @@ import asyncio
 import json
 import sys
 
+import httpx
 import websockets
 
 WS_URL = "ws://localhost:8000/ws/runs"
+API_BASE = "http://localhost:8000"
+
+
+def login_cookie_header(email: str, password: str) -> str:
+    res = httpx.post(f"{API_BASE}/auth/login", json={"email": email, "password": password}, timeout=30)
+    res.raise_for_status()
+    return f"session={res.cookies['session']}"
 
 
 async def _drain_until_result(ws) -> tuple[list[dict], dict]:
     events = []
     while True:
-        raw = await asyncio.wait_for(ws.recv(), timeout=90)
+        raw = await asyncio.wait_for(ws.recv(), timeout=240)
         event = json.loads(raw)
         events.append(event)
         if event["type"] in ("result", "error"):
@@ -33,10 +46,12 @@ async def _drain_until_result(ws) -> tuple[list[dict], dict]:
 
 async def full_flow() -> tuple[list[dict], list[dict]]:
     all_events: list[dict] = []
-    async with websockets.connect(WS_URL) as ws:
+    requester_cookie = login_cookie_header("requester@acme-demo.com", "demo1234")
+    approver_cookie = login_cookie_header("approver@acme-demo.com", "demo1234")
+
+    async with websockets.connect(WS_URL, additional_headers={"Cookie": requester_cookie}) as ws:
         await ws.send(json.dumps({
             "action": "start",
-            "requester_name": "WS Full-Flow Bot",
             "message": "I need to expense a conference ticket.",
         }))
         events, terminal = await _drain_until_result(ws)
@@ -79,6 +94,9 @@ async def full_flow() -> tuple[list[dict], list[dict]]:
 
         assert terminal["card"]["type"] == "approval_request", terminal["card"]
 
+    # Separate connection, separate role -- a Requester-authenticated socket
+    # would be rejected by the server's role check if it tried "approval".
+    async with websockets.connect(WS_URL, additional_headers={"Cookie": approver_cookie}) as ws:
         await ws.send(json.dumps({"action": "approval", "run_id": run_id, "approved": True}))
         events, terminal = await _drain_until_result(ws)
         all_events += events

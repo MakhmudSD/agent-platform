@@ -38,6 +38,23 @@ class RunStatus(str, enum.Enum):
     REJECTED = "rejected"
 
 
+class UserRole(str, enum.Enum):
+    REQUESTER = "requester"
+    APPROVER = "approver"
+    ADMIN = "admin"
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid)
+    email = Column(String(255), nullable=False, unique=True)
+    name = Column(String(120), nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(SAEnum(UserRole), nullable=False, default=UserRole.REQUESTER)
+    created_at = Column(DateTime(timezone=True), default=_now)
+
+
 class Run(Base):
     __tablename__ = "runs"
 
@@ -46,6 +63,13 @@ class Run(Base):
     status = Column(SAEnum(RunStatus), nullable=False, default=RunStatus.GATHERING)
 
     requester_name = Column(String(120), nullable=False)
+    # Nullable and added via a separate ALTER (see data/seed.py) rather than
+    # relying on Base.metadata.create_all(), which creates missing tables
+    # but never alters existing ones -- this column would silently never
+    # appear otherwise. Nullable so pre-auth demo rows (no owning user)
+    # keep working; requester_name stays the display source of truth even
+    # for rows that do have a user_id.
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # The evolving structured draft the agent is building up. Kept as JSONB
     # rather than fixed columns so the same run model can host different

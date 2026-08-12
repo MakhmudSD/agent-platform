@@ -145,8 +145,9 @@ def start_run(
     requester_name: str,
     initial_message: str,
     on_run_created: Callable[[Run], None] | None = None,
+    user_id: str | None = None,
 ) -> tuple[Run, Card]:
-    run = Run(requester_name=requester_name, status=RunStatus.GATHERING, draft={})
+    run = Run(requester_name=requester_name, status=RunStatus.GATHERING, draft={}, user_id=user_id)
     db.add(run)
     db.flush()  # get run.id before logging / using it as the graph thread_id
     if on_run_created:

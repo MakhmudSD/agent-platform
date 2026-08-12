@@ -24,7 +24,8 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.concurrency import run_in_threadpool
 
 from app.core import events
-from app.db.models import Run
+from app.core.security import SESSION_COOKIE_NAME, decode_session_token
+from app.db.models import Run, User
 from app.db.session import SessionLocal
 from app.orchestrator import graph
 
@@ -84,7 +85,7 @@ async def _run_watched(ws: WebSocket, run_id: str, fn, *args):
     return result
 
 
-async def _start_watched(ws: WebSocket, db, requester_name: str, message: str):
+async def _start_watched(ws: WebSocket, db, requester_name: str, message: str, user_id: str):
     """Same as _run_watched, but for start_run specifically: run.id doesn't
     exist until start_run has flushed it, so the sink is registered from
     inside the on_run_created callback (called on the worker thread, the
@@ -100,7 +101,9 @@ async def _start_watched(ws: WebSocket, db, requester_name: str, message: str):
 
     pump_task = asyncio.create_task(_pump_events(ws, pump, stop))
     try:
-        result = await run_in_threadpool(graph.start_run, db, requester_name, message, on_run_created)
+        result = await run_in_threadpool(
+            graph.start_run, db, requester_name, message, on_run_created, user_id,
+        )
     finally:
         if registered_run_id.get("id"):
             events.unregister(registered_run_id["id"])
@@ -109,9 +112,37 @@ async def _start_watched(ws: WebSocket, db, requester_name: str, message: str):
     return result
 
 
+def _authenticate(ws: WebSocket, db) -> User | None:
+    """Same trust source as the REST routes (core.deps.get_current_user):
+    the session cookie, decoded with the same secret. FastAPI's Depends()
+    injection doesn't run for WebSocket handshakes, so this duplicates the
+    decode step rather than reusing the dependency directly."""
+    token = ws.cookies.get(SESSION_COOKIE_NAME)
+    if not token:
+        return None
+    payload = decode_session_token(token)
+    if payload is None:
+        return None
+    return db.get(User, payload["sub"])
+
+
+def _owner_or_admin(run: Run, user: User) -> bool:
+    return run.user_id is None or run.user_id == user.id or user.role.value == "admin"
+
+
 @router.websocket("/ws/runs")
 async def runs_ws(ws: WebSocket) -> None:
     await ws.accept()
+    auth_db = SessionLocal()
+    try:
+        user = _authenticate(ws, auth_db)
+    finally:
+        auth_db.close()
+    if user is None:
+        await ws.send_json({"type": "error", "detail": "Not authenticated"})
+        await ws.close(code=1008)
+        return
+
     try:
         while True:
             body = await ws.receive_json()
@@ -119,7 +150,10 @@ async def runs_ws(ws: WebSocket) -> None:
             db = SessionLocal()
             try:
                 if action == "start":
-                    run, card = await _start_watched(ws, db, body["requester_name"], body["message"])
+                    if user.role.value not in ("requester", "admin"):
+                        await ws.send_json({"type": "error", "detail": "Requires role: requester or admin"})
+                        continue
+                    run, card = await _start_watched(ws, db, user.name, body["message"], user.id)
                     await ws.send_json({"type": "result", "run_id": run.id, "status": run.status, "card": card.model_dump()})
 
                 elif action == "message":
@@ -128,10 +162,16 @@ async def runs_ws(ws: WebSocket) -> None:
                     if run is None:
                         await ws.send_json({"type": "error", "detail": "Run not found"})
                         continue
+                    if not _owner_or_admin(run, user):
+                        await ws.send_json({"type": "error", "detail": "Not your request"})
+                        continue
                     card = await _run_watched(ws, run_id, graph.handle_message, db, run, body["message"])
                     await ws.send_json({"type": "result", "run_id": run.id, "status": run.status, "card": card.model_dump()})
 
                 elif action == "approval":
+                    if user.role.value not in ("approver", "admin"):
+                        await ws.send_json({"type": "error", "detail": "Requires role: approver or admin"})
+                        continue
                     run_id = body["run_id"]
                     run = db.get(Run, run_id)
                     if run is None:
