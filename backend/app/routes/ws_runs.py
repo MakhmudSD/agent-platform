@@ -179,6 +179,7 @@ async def runs_ws(ws: WebSocket) -> None:
                         continue
                     card = await _run_watched(
                         ws, run_id, graph.handle_approval_response, db, run, body["approved"], body.get("reason"),
+                        user.name,
                     )
                     await ws.send_json({"type": "result", "run_id": run.id, "status": run.status, "card": card.model_dump()})
 

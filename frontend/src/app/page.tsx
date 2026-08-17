@@ -2,17 +2,26 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, Card } from "@/lib/api";
+import { api, Card, PolicyCitationCard } from "@/lib/api";
 import { AuditLogEntry, LiveEvent, RunSocket } from "@/lib/ws";
 import { CardRenderer } from "@/components/CardRenderer";
 import { Sidebar } from "@/components/Sidebar";
 import { LivePanel, NODE_LABELS } from "@/components/LivePanel";
 import { RunProgress } from "@/components/RunProgress";
 import { ApproverDetail } from "@/components/ApproverDetail";
+import { RoutingVisual, PolicyCheckVisual } from "@/components/AgentVisuals";
 import { Icon } from "@/components/Icon";
 import { useAuth } from "@/lib/auth";
 
-type Turn = { from: "user" | "agent"; card?: Card; text?: string };
+// The design's core idea -- "the agent answers with visuals instead of
+// paragraphs" -- means routing and policy-check render inline in the
+// thread the moment the backend has real state for them (first question
+// asked -> routing; policy_retrieved event -> policy check), not just
+// bundled at the end on the approval card.
+type Turn =
+  | { from: "user" | "agent"; card?: Card; text?: string }
+  | { from: "agent"; visual: "routing"; policyChecked: boolean }
+  | { from: "agent"; visual: "policy_check"; citations: PolicyCitationCard[] };
 
 export default function Home() {
   const router = useRouter();
@@ -43,6 +52,10 @@ export default function Home() {
   const [startedAt, setStartedAt] = useState<number | null>(null);
 
   const socketRef = useRef<RunSocket | null>(null);
+  // Guards the routing visual to one appearance per run -- the backend
+  // event it's keyed off (clarifying_question_asked) can fire once per
+  // missing field, but "here's where this goes next" is only news once.
+  const routingShownRef = useRef(false);
 
   useEffect(() => {
     if (!authLoading && !user) router.push("/login");
@@ -77,6 +90,16 @@ export default function Home() {
         if ((event.event_type === "draft_updated" || event.event_type === "draft_finalized_for_review") && event.payload.draft) {
           setLiveDraft(event.payload.draft);
         }
+        if (event.event_type === "clarifying_question_asked" && !routingShownRef.current) {
+          routingShownRef.current = true;
+          setTurns((t) => [...t, { from: "agent", visual: "routing", policyChecked: false }]);
+        }
+        if (event.event_type === "policy_retrieved") {
+          const citations: PolicyCitationCard[] = (event.payload.matches ?? []).map((m: any) => ({
+            type: "policy_citation", title: m.title, excerpt: m.excerpt,
+          }));
+          setTurns((t) => [...t, { from: "agent", visual: "policy_check", citations }]);
+        }
         break;
       case "llm_token":
         setStreamText((s) => s + event.text);
@@ -108,6 +131,7 @@ export default function Home() {
     if (runId) {
       socketRef.current.send({ action: "message", run_id: runId, message });
     } else {
+      routingShownRef.current = false;
       setStartedAt(Date.now());
       socketRef.current.send({ action: "start", message });
     }
@@ -153,8 +177,8 @@ export default function Home() {
   }
 
   const latestApprovalCard = [...turns].reverse().find(
-    (t) => t.card?.type === "approval_request"
-  );
+    (t) => "card" in t && t.card?.type === "approval_request"
+  ) as { card: Extract<Card, { type: "approval_request" }> } | undefined;
   const isAwaitingApproval = status === "awaiting_approval";
   const statusLabel = liveNode ? (NODE_LABELS[liveNode] ?? liveNode) : status ? status.replace("_", " ") : "";
 
@@ -250,6 +274,14 @@ export default function Home() {
                     {turn.from === "user" ? (
                       <div className="bg-neutral-fill rounded-[18px] rounded-br-[6px] px-[19px] py-[13px] max-w-[60%] text-[15px] leading-[1.5] shadow-bubble text-ink-2">
                         {turn.text}
+                      </div>
+                    ) : "visual" in turn && turn.visual === "routing" ? (
+                      <div className="max-w-full animate-cardin">
+                        <RoutingVisual policyChecked={turn.policyChecked} />
+                      </div>
+                    ) : "visual" in turn && turn.visual === "policy_check" ? (
+                      <div className="max-w-full animate-cardin">
+                        <PolicyCheckVisual citations={turn.citations} />
                       </div>
                     ) : (
                       <div className="max-w-full">

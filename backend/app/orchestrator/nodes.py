@@ -173,8 +173,14 @@ def policy_research_node(state: OrchestratorState, config: RunnableConfig) -> di
 
     query = state.get("next_query") or f"{draft.get('category', '')} {draft.get('justification', '')}"
     matches = retrieve_policy(db, query, top_k=2) if query.strip() else []
+    # excerpt included so the live "policy checked" visual (rendered the
+    # instant this event streams) can show the same evidence clause the
+    # final approval card shows -- not just titles.
     log_event(db, run, "policy_retrieved", {
-        "matches": [{"title": m.title, "doc_id": m.doc_id, "score": m.score} for m in matches]
+        "matches": [
+            {"title": m.title, "doc_id": m.doc_id, "score": m.score, "excerpt": _excerpt(m.text)}
+            for m in matches
+        ]
     })
 
     policies = [
