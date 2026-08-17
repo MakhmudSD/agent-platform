@@ -13,6 +13,7 @@ from typing import Callable
 import google.generativeai as genai
 from google.api_core.exceptions import ResourceExhausted
 from langsmith import traceable
+from langsmith.run_helpers import get_current_run_tree
 from tenacity import retry, retry_if_exception_type, stop_after_attempt
 
 from app.core import events
@@ -88,4 +89,22 @@ def structured_call(system_prompt: str, user_content: str) -> dict:
         genai.GenerationConfig(temperature=0.2, response_mime_type="application/json"),
         on_token=on_token,
     )
+
+    # Without this, every trace's token count is 0 (confirmed against real
+    # LangSmith data -- 100 traced runs, all zero) because Gemini's SDK
+    # doesn't auto-populate it the way a LangChain chat model would. This
+    # is the one piece of real usage data the call already has for free
+    # (response.usage_metadata), just never surfaced -- attaching it here
+    # is what makes "is token usage balanced between nodes" answerable
+    # from LangSmith at all, instead of only from call counts.
+    usage = getattr(response, "usage_metadata", None)
+    if usage is not None:
+        run_tree = get_current_run_tree()
+        if run_tree is not None:
+            run_tree.set(usage_metadata={
+                "input_tokens": usage.prompt_token_count,
+                "output_tokens": usage.candidates_token_count,
+                "total_tokens": usage.total_token_count,
+            })
+
     return json.loads(response.text)
