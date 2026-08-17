@@ -2,18 +2,19 @@ import { Card } from "@/lib/api";
 import { Icon } from "@/components/Icon";
 import { AgentVisualStack } from "@/components/AgentVisuals";
 
+interface CardRendererProps {
+  card: Card;
+  onApprovalDecision?: (approved: boolean, reason?: string) => void;
+}
+
 /**
  * One component per card type, dispatched by `type`. This mirrors the
  * backend's discriminated union exactly — adding a card type means adding
  * one case here and one in cards.py, not restructuring the chat.
  */
-export function CardRenderer({
-  card,
-  onApprovalDecision,
-}: {
-  card: Card;
-  onApprovalDecision?: (approved: boolean, reason?: string) => void;
-}) {
+export function CardRenderer(props: CardRendererProps) {
+  const { card, onApprovalDecision } = props;
+
   switch (card.type) {
     case "clarifying_question":
       return (
@@ -58,13 +59,14 @@ export function CardRenderer({
   }
 }
 
-function ApprovalCard({
-  card,
-  onDecision,
-}: {
+interface ApprovalCardProps {
   card: Extract<Card, { type: "approval_request" }>;
   onDecision?: (approved: boolean, reason?: string) => void;
-}) {
+}
+
+function ApprovalCard(props: ApprovalCardProps) {
+  const { card, onDecision } = props;
+
   return (
     <div className="flex flex-col gap-3.5">
       <div className="w-[600px] max-w-full bg-card rounded-2xl shadow-card overflow-hidden animate-cardin">

@@ -23,16 +23,16 @@ const HEADER = "flex items-baseline justify-between mb-[15px]";
 const TITLE = "text-[13.5px] font-semibold text-ink";
 const META = "font-mono text-[11.5px] text-text-quaternary";
 
-export function RoutingVisual({
-  policyChecked,
-  routedTo,
-}: {
+interface RoutingVisualProps {
   policyChecked: boolean;
   // Set once escalation_routing_node has actually decided -- before that,
   // the final node/footer stay generic ("Approver decides") since routing
   // genuinely isn't known yet.
   routedTo?: "approver" | "reviewer";
-}) {
+}
+
+export function RoutingVisual(props: RoutingVisualProps) {
+  const { policyChecked, routedTo } = props;
   const toReviewer = routedTo === "reviewer";
   return (
     <div className={CARD}>
@@ -56,7 +56,8 @@ export function RoutingVisual({
   );
 }
 
-export function RoutingDecisionVisual({ decision }: { decision: RoutingDecision }) {
+export function RoutingDecisionVisual(props: { decision: RoutingDecision }) {
+  const { decision } = props;
   const toReviewer = decision.routed_to === "reviewer";
   return (
     <div className={CARD}>
@@ -79,7 +80,8 @@ export function RoutingDecisionVisual({ decision }: { decision: RoutingDecision 
   );
 }
 
-export function ApprovalSummaryVisual({ summary }: { summary: string }) {
+export function ApprovalSummaryVisual(props: { summary: string }) {
+  const { summary } = props;
   return (
     <div className={CARD}>
       <div className={HEADER}>
@@ -99,7 +101,8 @@ export function ApprovalSummaryVisual({ summary }: { summary: string }) {
 // policy text (backend/app/orchestrator/nodes.py's draft_node), not a
 // static list -- "evidence" is required to be a verbatim span from the
 // excerpt, checked server-side before it ever reaches here.
-function PolicyRuleRow({ rule }: { rule: PolicyRuleCard }) {
+function PolicyRuleRow(props: { rule: PolicyRuleCard }) {
+  const { rule } = props;
   const marker =
     rule.status === "binding" ? (
       <span className="w-4 h-4 mt-0.5 shrink-0 rounded-[5px] bg-accent text-white text-[10.5px] font-semibold leading-4 text-center">!</span>
@@ -119,13 +122,14 @@ function PolicyRuleRow({ rule }: { rule: PolicyRuleCard }) {
   );
 }
 
-export function PolicyCheckVisual({
-  evaluation,
-  citations,
-}: {
+interface PolicyCheckVisualProps {
   evaluation: PolicyRuleCard[];
   citations: PolicyCitationCard[];
-}) {
+}
+
+export function PolicyCheckVisual(props: PolicyCheckVisualProps) {
+  const { evaluation, citations } = props;
+
   if (evaluation.length > 0) {
     // "Clear" = resolved (passed or binding-but-satisfied), matching the
     // reference's "3 of 4 clear" -- only "outstanding" rules count against
@@ -178,7 +182,8 @@ export function PolicyCheckVisual({
   );
 }
 
-export function CostCapVisual({ amount, cap }: { amount: number; cap: number }) {
+export function CostCapVisual(props: { amount: number; cap: number }) {
+  const { amount, cap } = props;
   const overCap = amount > cap;
   return (
     <div className={CARD}>
@@ -199,7 +204,8 @@ export function CostCapVisual({ amount, cap }: { amount: number; cap: number }) 
   );
 }
 
-export function LikelyOutcomeVisual({ confidence }: { confidence: { approved: number; total: number; pct: number } }) {
+export function LikelyOutcomeVisual(props: { confidence: { approved: number; total: number; pct: number } }) {
+  const { confidence } = props;
   return (
     <div className={CARD}>
       <div className={HEADER}>
@@ -221,7 +227,8 @@ export function LikelyOutcomeVisual({ confidence }: { confidence: { approved: nu
   );
 }
 
-export function ComparableDecisionsVisual({ category, decisions }: { category: string | undefined; decisions: ReturnType<typeof comparableDecisions> }) {
+export function ComparableDecisionsVisual(props: { category: string | undefined; decisions: ReturnType<typeof comparableDecisions> }) {
+  const { category, decisions } = props;
   return (
     <div className={CARD}>
       <div className={HEADER}>
@@ -258,21 +265,21 @@ export function ComparableDecisionsVisual({ category, decisions }: { category: s
 // cost cap -> comparables -> likely outcome). Used by both the requester's
 // own approval card and the approver's evidence column so they render
 // identically from the same computation.
-export function AgentVisualStack({
-  draft,
-  policyCitations,
-  policyEvaluation = [],
-  routingDecision = null,
-  approvalSummary = null,
-  excludeRunId,
-}: {
+interface AgentVisualStackProps {
   draft: Record<string, any>;
   policyCitations: PolicyCitationCard[];
   policyEvaluation?: PolicyRuleCard[];
   routingDecision?: RoutingDecision | null;
   approvalSummary?: string | null;
   excludeRunId?: string;
-}) {
+}
+
+export function AgentVisualStack(props: AgentVisualStackProps) {
+  const {
+    draft, policyCitations, policyEvaluation = [], routingDecision = null,
+    approvalSummary = null, excludeRunId,
+  } = props;
+
   const [runs, setRuns] = useState<any[]>([]);
 
   useEffect(() => {
@@ -299,7 +306,8 @@ export function AgentVisualStack({
   );
 }
 
-function RouteNode({ label, done, active }: { label: string; done?: boolean; active?: boolean }) {
+function RouteNode(props: { label: string; done?: boolean; active?: boolean }) {
+  const { label, done, active } = props;
   return (
     <div className="w-[86px] shrink-0 flex flex-col items-center gap-2">
       <span
@@ -320,7 +328,8 @@ function RouteNode({ label, done, active }: { label: string; done?: boolean; act
   );
 }
 
-function RouteConnector({ done }: { done?: boolean }) {
+function RouteConnector(props: { done?: boolean }) {
+  const { done } = props;
   return (
     <span
       className="flex-1 h-[1.5px] mt-4"

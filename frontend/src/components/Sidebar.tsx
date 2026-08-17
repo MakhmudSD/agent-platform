@@ -23,11 +23,7 @@ function initials(name: string): string {
   return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
 }
 
-export function Sidebar({
-  activeRunId,
-  onSelectPendingRun,
-  refreshKey,
-}: {
+interface SidebarProps {
   activeRunId?: string;
   // Approver/Reviewer only: lets clicking a pending run actually load it
   // into the live panel to act on, instead of only being viewable
@@ -41,7 +37,10 @@ export function Sidebar({
   // just-resolved run as still pending until something else triggered a
   // refetch.
   refreshKey?: number;
-}) {
+}
+
+export function Sidebar(props: SidebarProps) {
+  const { activeRunId, onSelectPendingRun, refreshKey } = props;
   const { user, logout } = useAuth();
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -218,21 +217,18 @@ export function Sidebar({
   );
 }
 
-function RailButton({
-  iconName,
-  label,
-  active,
-  disabled,
-  onClick,
-  href,
-}: {
+interface RailButtonProps {
   iconName: string;
   label: string;
   active?: boolean;
   disabled?: boolean;
   onClick?: () => void;
   href?: string;
-}) {
+}
+
+function RailButton(props: RailButtonProps) {
+  const { iconName, label, active, disabled, onClick, href } = props;
+
   const classes = `w-11 h-11 flex items-center justify-center rounded-[14px] transition-colors ${
     disabled
       ? "text-placeholder cursor-default"
