@@ -24,6 +24,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.concurrency import run_in_threadpool
 
 from app.core import events
+from app.core.deps import can_decide
 from app.core.security import SESSION_COOKIE_NAME, decode_session_token
 from app.db.models import Run, User
 from app.db.session import SessionLocal
@@ -169,13 +170,16 @@ async def runs_ws(ws: WebSocket) -> None:
                     await ws.send_json({"type": "result", "run_id": run.id, "status": run.status, "card": card.model_dump()})
 
                 elif action == "approval":
-                    if user.role.value not in ("approver", "admin"):
-                        await ws.send_json({"type": "error", "detail": "Requires role: approver or admin"})
+                    if user.role.value not in ("approver", "reviewer", "admin"):
+                        await ws.send_json({"type": "error", "detail": "Requires role: approver, reviewer, or admin"})
                         continue
                     run_id = body["run_id"]
                     run = db.get(Run, run_id)
                     if run is None:
                         await ws.send_json({"type": "error", "detail": "Run not found"})
+                        continue
+                    if not can_decide(run, user):
+                        await ws.send_json({"type": "error", "detail": "This request wasn't routed to you"})
                         continue
                     card = await _run_watched(
                         ws, run_id, graph.handle_approval_response, db, run, body["approved"], body.get("reason"),

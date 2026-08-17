@@ -12,7 +12,9 @@ export const NODE_LABELS: Record<string, string> = {
   await_message: "Waiting on you",
   policy_research: "Checking company policy",
   draft: "Drafting the request",
-  interrupt_for_approval: "Waiting on approver",
+  escalation_routing: "Deciding who should review this",
+  approval_summary: "Preparing the decision brief",
+  interrupt_for_approval: "Waiting on a decision",
   apply_approval: "Applying decision",
 };
 
@@ -25,6 +27,14 @@ const REQUIRED_FIELDS = ["category", "amount", "date", "justification", "cost_ce
 function decidedBy(auditLog: AuditLogEntry[]): string | null {
   const entry = [...auditLog].reverse().find((e) => e.event_type === "approved" || e.event_type === "rejected");
   return entry?.payload?.approver_name ?? null;
+}
+
+// Real routing_decision from escalation_routing_node -- before this fires,
+// "approver" is still the honest default (that's what routing falls back
+// to server-side too), not a guess.
+function routingDecision(auditLog: AuditLogEntry[]): { routed_to: "approver" | "reviewer" } | null {
+  const entry = [...auditLog].reverse().find((e) => e.event_type === "routing_decided");
+  return entry?.payload?.routing_decision ?? null;
 }
 
 function requestedAt(auditLog: AuditLogEntry[]): number | null {
@@ -63,10 +73,15 @@ export function LivePanel(props: LivePanelProps) {
   const isAwaiting = status === "awaiting_approval";
   const approver = decidedBy(auditLog);
   const waitingSince = requestedAt(auditLog);
+  const routing = routingDecision(auditLog);
+  const toReviewer = routing?.routed_to === "reviewer";
+  const routesToLabel = approver ? approver : isAwaiting || isDecided ? (toReviewer ? "Specialist review" : "Approver review") : "—";
 
   return (
     <aside className="w-[392px] shrink-0 h-screen sticky top-0 flex flex-col px-8 py-[26px] border-l border-hairline bg-app overflow-y-auto">
-      <p className="mb-1 text-sm font-semibold text-ink tracking-[-.01em]">What your approver will see</p>
+      <p className="mb-1 text-sm font-semibold text-ink tracking-[-.01em]">
+        What your {toReviewer ? "reviewer" : "approver"} will see
+      </p>
       <p className="mb-[18px] text-[13px] leading-[1.5] text-text-tertiary">
         This fills in as you answer — nothing is sent until every detail is captured.
       </p>
@@ -81,7 +96,7 @@ export function LivePanel(props: LivePanelProps) {
         <div className="h-px bg-hairline-soft mb-4" />
         <div className="flex flex-col gap-[13px]">
           <Row label="Charged to" value={draft.cost_center ?? "—"} mono />
-          <Row label="Routes to" value={approver ? approver : isAwaiting || isDecided ? "Approver review" : "—"} />
+          <Row label="Routes to" value={routesToLabel} />
           {typicalDecision && <Row label="Typical decision" value={typicalDecision} />}
         </div>
       </div>
@@ -117,7 +132,9 @@ export function LivePanel(props: LivePanelProps) {
         ) : isAwaiting ? (
           <div className="h-12 rounded-[15px] bg-neutral-fill flex items-center justify-center gap-[9px] text-[14.5px] font-medium text-ink-muted">
             <span className="w-[7px] h-[7px] rounded-full bg-accent animate-breathe" />
-            {waitingSince ? `With the approver since ${new Date(waitingSince).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "With the approver"}
+            {waitingSince
+              ? `With the ${toReviewer ? "reviewer" : "approver"} since ${new Date(waitingSince).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+              : `With the ${toReviewer ? "reviewer" : "approver"}`}
           </div>
         ) : (
           <div className="h-12 rounded-[15px] border border-dashed border-placeholder flex items-center justify-center gap-[9px] text-[15px] font-semibold text-text-tertiary">

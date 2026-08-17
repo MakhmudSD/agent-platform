@@ -21,6 +21,17 @@ class OrchestratorState(TypedDict, total=False):
     # set by draft_node from the same structured_call that already reads
     # the retrieved excerpts, not a separate LLM call.
     policy_evaluation: list[dict]
+    # {routed_to, reviewer_category, reason, confidence, triggered_rule} --
+    # set by escalation_routing_node. The Escalation/Routing Agent's real
+    # output contract; approval_summary_node and the interrupt payload both
+    # depend on this shape, so it's fixed even though the routing logic
+    # behind it is explicitly a spike (see escalation_routing_node's
+    # docstring).
+    routing_decision: dict | None
+    # Condensed decision-ready brief for the approver -- set by
+    # approval_summary_node, only when routing_decision.routed_to ==
+    # "approver" (a Reviewer gets full context instead, not a summary).
+    approval_summary: str | None
     status: str  # mirrors RunStatus.value
 
     # Routing/plumbing only — not part of the spec's five state fields.

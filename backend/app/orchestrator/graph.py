@@ -37,12 +37,12 @@ from app.db.models import Run, RunStatus
 from app.orchestrator.audit import log_event
 from app.orchestrator.cards import (
     ApprovalRequestCard, Card, ClarifyingQuestionCard, FinalConfirmationCard,
-    PolicyCitationCard, PolicyRuleCard,
+    PolicyCitationCard, PolicyRuleCard, RoutingDecisionCard,
 )
 from app.orchestrator.graph_state import OrchestratorState
 from app.orchestrator.nodes import (
-    apply_approval_node, await_message_node, draft_node,
-    intake_node, interrupt_for_approval_node, manager_node,
+    apply_approval_node, approval_summary_node, await_message_node, draft_node,
+    escalation_routing_node, intake_node, interrupt_for_approval_node, manager_node,
     policy_research_node, route_after_intake, route_from_manager,
 )
 
@@ -67,6 +67,8 @@ def _build_graph():
     g.add_node("await_message", await_message_node)
     g.add_node("policy_research", policy_research_node)
     g.add_node("draft", draft_node)
+    g.add_node("escalation_routing", escalation_routing_node)
+    g.add_node("approval_summary", approval_summary_node)
     g.add_node("interrupt_for_approval", interrupt_for_approval_node)
     g.add_node("apply_approval", apply_approval_node)
 
@@ -74,20 +76,21 @@ def _build_graph():
     g.add_conditional_edges(
         "manager",
         route_from_manager,
-        {
-            "intake": "intake",
-            "policy_research": "policy_research",
-            "draft": "draft",
-            "interrupt_for_approval": "interrupt_for_approval",
-            "done": END,
-        },
+        {"intake": "intake", "policy_research": "policy_research", "draft": "draft"},
     )
     g.add_conditional_edges(
         "intake", route_after_intake, {"manager": "manager", "await_message": "await_message"}
     )
     g.add_edge("await_message", "intake")
     g.add_edge("policy_research", "manager")
-    g.add_edge("draft", "manager")
+    # Once a draft exists, the manager is never consulted again -- routing,
+    # review, and approval are a fixed pipeline (see MANAGER_SYSTEM_PROMPT),
+    # not a decision the manager makes. Both possible destinations
+    # (approver or reviewer) pass through approval_summary_node, which is
+    # what actually decides whether to call the Approval-Summary Agent.
+    g.add_edge("draft", "escalation_routing")
+    g.add_edge("escalation_routing", "approval_summary")
+    g.add_edge("approval_summary", "interrupt_for_approval")
     g.add_edge("interrupt_for_approval", "apply_approval")
     g.add_edge("apply_approval", END)
 
@@ -114,7 +117,12 @@ def _card_from_interrupt(payload: dict) -> Card:
     if kind == "approval_request":
         citations = [PolicyCitationCard(**c) for c in payload.get("policy_citations", [])]
         evaluation = [PolicyRuleCard(**e) for e in payload.get("policy_evaluation", [])]
-        return ApprovalRequestCard(draft=payload["draft"], policy_citations=citations, policy_evaluation=evaluation)
+        routing_decision = payload.get("routing_decision")
+        return ApprovalRequestCard(
+            draft=payload["draft"], policy_citations=citations, policy_evaluation=evaluation,
+            routing_decision=RoutingDecisionCard(**routing_decision) if routing_decision else None,
+            approval_summary=payload.get("approval_summary"),
+        )
     raise ValueError(f"Unrecognized interrupt payload kind: {kind!r} in {payload!r}")
 
 

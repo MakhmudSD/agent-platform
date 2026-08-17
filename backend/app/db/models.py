@@ -41,6 +41,7 @@ class RunStatus(str, enum.Enum):
 class UserRole(str, enum.Enum):
     REQUESTER = "requester"
     APPROVER = "approver"
+    REVIEWER = "reviewer"
     ADMIN = "admin"
 
 
@@ -76,6 +77,13 @@ class Run(Base):
     # request schemas (expense, access request, vendor request, ...) without
     # a migration per workflow flavor — this is the "vertical" seam.
     draft = Column(JSONB, nullable=False, default=dict)
+
+    # Set by escalation_routing_node once the draft is finalized: "approver"
+    # or "reviewer". Null until then (still gathering/drafting), and for
+    # legacy pre-migration rows. Determines both which queue a run shows up
+    # in and who is authorized to decide it -- see core/deps.py's
+    # require_decider and routes/runs.py's respond_to_approval.
+    routed_to = Column(String(20), nullable=True)
 
     created_at = Column(DateTime(timezone=True), default=_now)
     updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)

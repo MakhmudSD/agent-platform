@@ -12,6 +12,7 @@ type RunSummary = {
   status: string;
   requester_name: string;
   user_id: string | null;
+  routed_to: "approver" | "reviewer" | null;
   created_at: string;
   draft: Record<string, any> | null;
 };
@@ -37,11 +38,11 @@ export function Sidebar({
   refreshKey,
 }: {
   activeRunId?: string;
-  // Approver-only: lets clicking a pending run actually load it into the
-  // live panel to act on, instead of only being viewable read-only via
-  // /history. Requester's "Recent" list still links to /history -- picking
-  // a past run back up into a live conversation isn't wired up for that
-  // side yet.
+  // Approver/Reviewer only: lets clicking a pending run actually load it
+  // into the live panel to act on, instead of only being viewable
+  // read-only via /history. Requester's "Recent" list still links to
+  // /history -- picking a past run back up into a live conversation isn't
+  // wired up for that side yet.
   onSelectPendingRun?: (runId: string) => void;
   // Bumped by the parent whenever a run's status actually changes (a WS
   // "result" lands) -- role/activeRunId alone don't change just because a
@@ -56,6 +57,8 @@ export function Sidebar({
 
   const role = user?.role;
   const isApprover = role === "approver" || role === "admin";
+  const isReviewer = role === "reviewer";
+  const isDecider = isApprover || isReviewer;
 
   useEffect(() => {
     if (!user) return;
@@ -63,16 +66,25 @@ export function Sidebar({
     api.listNotifications().then(setNotifications).catch(() => {});
   }, [user, activeRunId, refreshKey]);
 
-  // Prefer the real user_id match -- requester_name is a free-text display
-  // name and two accounts can share one, which would otherwise leak runs
-  // across accounts. Legacy rows predating auth have user_id === null, so
-  // those still fall back to name matching rather than becoming invisible.
-  const visibleRuns = isApprover
-    ? runs.filter((r) => r.status === "awaiting_approval")
+  // Null/legacy routed_to defaults to "approver", matching the backend's
+  // can_decide() default -- rows from before escalation_routing_node
+  // existed, or any edge case where routing didn't fire, still land in the
+  // approver's queue rather than nobody's. Admin sees both queues merged.
+  // Prefer the real user_id match for the requester's own list --
+  // requester_name is a free-text display name and two accounts can share
+  // one, which would otherwise leak runs across accounts. Legacy rows
+  // predating auth have user_id === null, so those still fall back to name
+  // matching rather than becoming invisible.
+  const visibleRuns = isReviewer
+    ? runs.filter((r) => r.status === "awaiting_approval" && r.routed_to === "reviewer")
+    : isApprover
+    ? role === "admin"
+      ? runs.filter((r) => r.status === "awaiting_approval")
+      : runs.filter((r) => r.status === "awaiting_approval" && (r.routed_to ?? "approver") === "approver")
     : runs.filter((r) => (r.user_id ? r.user_id === user?.id : r.requester_name === user?.name));
 
-  const listLabel = isApprover ? "Pending approval" : "Recent";
-  const emptyLabel = isApprover ? "Nothing awaiting approval." : "No requests yet.";
+  const listLabel = isReviewer ? "Pending review" : isApprover ? "Pending approval" : "Recent";
+  const emptyLabel = isReviewer ? "Nothing awaiting review." : isApprover ? "Nothing awaiting approval." : "No requests yet.";
 
   // Notifications carry no user_id column yet -- "relevant to this user" is
   // still decided by message shape + name-matching, same technique the run
@@ -81,7 +93,8 @@ export function Sidebar({
   const runById = Object.fromEntries(runs.map((r) => [r.run_id, r]));
   const relevantUnread = notifications.filter((n) => {
     if (n.read) return false;
-    if (isApprover) return n.message.startsWith("Awaiting approval:");
+    if (isReviewer) return n.message.startsWith("Awaiting review:");
+    if (isApprover) return n.message.startsWith("Awaiting approval:") || (role === "admin" && n.message.startsWith("Awaiting review:"));
     const run = runById[n.run_id];
     if (!run) return false;
     const owned = run.user_id ? run.user_id === user?.id : run.requester_name === user?.name;
@@ -184,7 +197,7 @@ export function Sidebar({
                     {summary ?? "New request"}
                   </span>
                   <span className="block truncate text-xs text-text-tertiary">
-                    {isApprover ? `${r.requester_name} · ` : ""}
+                    {isDecider ? `${r.requester_name} · ` : ""}
                     {r.status.replace("_", " ")}
                   </span>
                   <MiniProgress status={r.status} />
@@ -194,7 +207,7 @@ export function Sidebar({
                 activeRunId === r.run_id ? "bg-neutral-fill text-ink" : "text-ink-2 hover:bg-neutral-fill/40"
               }`;
 
-              return isApprover && onSelectPendingRun ? (
+              return isDecider && onSelectPendingRun ? (
                 <button key={r.run_id} onClick={() => onSelectPendingRun(r.run_id)} className={`w-full text-left ${rowClass}`}>
                   {rowContent}
                 </button>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, PolicyCitationCard, PolicyRuleCard } from "@/lib/api";
+import { api, PolicyCitationCard, PolicyRuleCard, RoutingDecision } from "@/lib/api";
 import { approvalConfidence, comparableDecisions, decisionLatencyLabel, extractPolicyCap } from "@/lib/stats";
 
 // The four agent-visual cards this app can build for real from data it
@@ -23,7 +23,17 @@ const HEADER = "flex items-baseline justify-between mb-[15px]";
 const TITLE = "text-[13.5px] font-semibold text-ink";
 const META = "font-mono text-[11.5px] text-text-quaternary";
 
-export function RoutingVisual({ policyChecked }: { policyChecked: boolean }) {
+export function RoutingVisual({
+  policyChecked,
+  routedTo,
+}: {
+  policyChecked: boolean;
+  // Set once escalation_routing_node has actually decided -- before that,
+  // the final node/footer stay generic ("Approver decides") since routing
+  // genuinely isn't known yet.
+  routedTo?: "approver" | "reviewer";
+}) {
+  const toReviewer = routedTo === "reviewer";
   return (
     <div className={CARD}>
       <div className={HEADER}>
@@ -35,11 +45,47 @@ export function RoutingVisual({ policyChecked }: { policyChecked: boolean }) {
         <RouteConnector done />
         <RouteNode label="Policy checked" done={policyChecked} active={!policyChecked} />
         <RouteConnector done={policyChecked} />
-        <RouteNode label="Approver decides" active={policyChecked} />
+        <RouteNode label={toReviewer ? "Reviewer decides" : "Approver decides"} active={policyChecked} />
       </div>
       <p className="mt-4 text-[13px] text-text-tertiary">
-        Every request routes to the approver queue -- there's no auto-approve tier yet.
+        {toReviewer
+          ? "This one needs a specialist review before it can be decided."
+          : "Every request routes to a decider -- there's no auto-approve tier yet."}
       </p>
+    </div>
+  );
+}
+
+export function RoutingDecisionVisual({ decision }: { decision: RoutingDecision }) {
+  const toReviewer = decision.routed_to === "reviewer";
+  return (
+    <div className={CARD}>
+      <div className={HEADER}>
+        <span className={TITLE}>{toReviewer ? "Routed to specialist review" : "Routed to your approver"}</span>
+        <span className={META}>{decision.confidence} confidence</span>
+      </div>
+      <p className="text-[13.5px] leading-[1.5] text-ink-2">{decision.reason}</p>
+      {decision.triggered_rule && (
+        <p className="mt-2.5 text-[12.5px] text-text-tertiary">
+          Triggered by: <span className="text-ink-2">{decision.triggered_rule}</span>
+        </p>
+      )}
+      {toReviewer && decision.reviewer_category && (
+        <p className="mt-2 text-[11px] text-text-quaternary uppercase tracking-[.06em]">
+          {decision.reviewer_category} review
+        </p>
+      )}
+    </div>
+  );
+}
+
+export function ApprovalSummaryVisual({ summary }: { summary: string }) {
+  return (
+    <div className={CARD}>
+      <div className={HEADER}>
+        <span className={TITLE}>Decision brief</span>
+      </div>
+      <p className="text-[14px] leading-[1.55] text-ink-2">{summary}</p>
     </div>
   );
 }
@@ -211,11 +257,15 @@ export function AgentVisualStack({
   draft,
   policyCitations,
   policyEvaluation = [],
+  routingDecision = null,
+  approvalSummary = null,
   excludeRunId,
 }: {
   draft: Record<string, any>;
   policyCitations: PolicyCitationCard[];
   policyEvaluation?: PolicyRuleCard[];
+  routingDecision?: RoutingDecision | null;
+  approvalSummary?: string | null;
   excludeRunId?: string;
 }) {
   const [runs, setRuns] = useState<any[]>([]);
@@ -230,7 +280,12 @@ export function AgentVisualStack({
 
   return (
     <div className="flex flex-col gap-3.5">
-      <RoutingVisual policyChecked={policyCitations.length > 0} />
+      {/* Leads the stack when present -- this is literally what a busy
+          approver reads instead of everything below it (see the
+          Approval-Summary persona in the design brainstorm). */}
+      {approvalSummary && <ApprovalSummaryVisual summary={approvalSummary} />}
+      <RoutingVisual policyChecked={policyCitations.length > 0} routedTo={routingDecision?.routed_to} />
+      {routingDecision && <RoutingDecisionVisual decision={routingDecision} />}
       <PolicyCheckVisual evaluation={policyEvaluation} citations={policyCitations} />
       {cap != null && draft.amount != null && <CostCapVisual amount={draft.amount} cap={cap} />}
       <ComparableDecisionsVisual category={draft.category} decisions={comparable} />

@@ -2,32 +2,43 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, Card, PolicyCitationCard, PolicyRuleCard } from "@/lib/api";
+import { api, Card, PolicyCitationCard, PolicyRuleCard, RoutingDecision } from "@/lib/api";
 import { AuditLogEntry, LiveEvent, RunSocket } from "@/lib/ws";
 import { CardRenderer } from "@/components/CardRenderer";
 import { Sidebar } from "@/components/Sidebar";
 import { LivePanel, NODE_LABELS } from "@/components/LivePanel";
 import { RunProgress } from "@/components/RunProgress";
 import { ApproverDetail } from "@/components/ApproverDetail";
-import { RoutingVisual, PolicyCheckVisual } from "@/components/AgentVisuals";
+import {
+  ApprovalSummaryVisual, PolicyCheckVisual, RoutingDecisionVisual, RoutingVisual,
+} from "@/components/AgentVisuals";
 import { Icon } from "@/components/Icon";
 import { useAuth } from "@/lib/auth";
 
 // The design's core idea -- "the agent answers with visuals instead of
-// paragraphs" -- means routing and policy-check render inline in the
-// thread the moment the backend has real state for them (first question
-// asked -> routing; policy_retrieved -> raw citations; policy_evaluated ->
-// the real per-rule checklist once draft_node's evaluation call lands),
-// not just bundled at the end on the approval card.
+// paragraphs" -- means each real agent moment renders inline in the thread
+// as it happens, not bundled at the end on the approval card: routing
+// after the first clarifying question, policy-check as citations then the
+// real rule checklist, the Escalation/Routing Agent's decision the moment
+// it fires, and the Approval-Summary Agent's brief right after.
 type Turn =
   | { from: "user" | "agent"; card?: Card; text?: string }
   | { from: "agent"; visual: "routing"; policyChecked: boolean }
-  | { from: "agent"; visual: "policy_check"; citations: PolicyCitationCard[]; evaluation: PolicyRuleCard[] };
+  | { from: "agent"; visual: "policy_check"; citations: PolicyCitationCard[]; evaluation: PolicyRuleCard[] }
+  | { from: "agent"; visual: "routing_decision"; decision: RoutingDecision }
+  | { from: "agent"; visual: "approval_summary"; summary: string };
 
 export default function Home() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  // Admin can act as either decider (matches the rest of the app's
+  // admin-bypasses-ownership pattern). Approver and Reviewer each get the
+  // same split evidence/decision screen -- which requests actually show up
+  // in their queue is what differs, decided server-side by routed_to (see
+  // Sidebar.tsx and core/deps.py's can_decide).
   const isApprover = user?.role === "approver" || user?.role === "admin";
+  const isReviewer = user?.role === "reviewer";
+  const isDecider = isApprover || isReviewer;
 
   const [runId, setRunId] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -128,6 +139,12 @@ export default function Home() {
         if (event.event_type === "policy_evaluated") {
           upsertPolicyCheckTurn({ evaluation: event.payload.policy_evaluation ?? [] });
         }
+        if (event.event_type === "routing_decided" && event.payload.routing_decision) {
+          setTurns((t) => [...t, { from: "agent", visual: "routing_decision", decision: event.payload.routing_decision }]);
+        }
+        if (event.event_type === "approval_summary_generated" && event.payload.approval_summary) {
+          setTurns((t) => [...t, { from: "agent", visual: "approval_summary", summary: event.payload.approval_summary }]);
+        }
         break;
       case "llm_token":
         setStreamText((s) => s + event.text);
@@ -149,7 +166,7 @@ export default function Home() {
   }
 
   function handleSend() {
-    if (isApprover) return;
+    if (isDecider) return;
     if (!input.trim() || busy || !socketRef.current) return;
     const message = input.trim();
     setInput("");
@@ -190,11 +207,16 @@ export default function Home() {
     const approvalEvent = [...run.events].reverse().find((e) => e.type === "approval_requested");
     const policyCitations = approvalEvent?.payload?.policy_citations ?? [];
     const policyEvaluation = approvalEvent?.payload?.policy_evaluation ?? [];
+    const routingDecision = approvalEvent?.payload?.routing_decision ?? null;
+    const approvalSummary = approvalEvent?.payload?.approval_summary ?? null;
     setRunId(run.run_id);
     setStatus(run.status);
     setTurns([{
       from: "agent",
-      card: { type: "approval_request", draft: run.draft, policy_citations: policyCitations, policy_evaluation: policyEvaluation },
+      card: {
+        type: "approval_request", draft: run.draft, policy_citations: policyCitations,
+        policy_evaluation: policyEvaluation, routing_decision: routingDecision, approval_summary: approvalSummary,
+      },
     }]);
     setLiveDraft(run.draft);
     setAuditLog([]);
@@ -203,7 +225,7 @@ export default function Home() {
   }
 
   function handleApproval(approved: boolean, reason?: string) {
-    if (!isApprover || !runId || busy || !socketRef.current) return;
+    if (!isDecider || !runId || busy || !socketRef.current) return;
     setWsError(null);
     setBusy(true);
     socketRef.current.send({ action: "approval", run_id: runId, approved, reason });
@@ -219,11 +241,13 @@ export default function Home() {
     return <div className="min-h-screen bg-app" />;
   }
 
-  // Approver gets the split evidence/decision screen instead of a chat
-  // transcript -- handleSelectPendingRun already only ever puts one
-  // approval_request card into `turns`, so there's no history to lose.
-  if (isApprover) {
+  // Approver and Reviewer both get the split evidence/decision screen
+  // instead of a chat transcript -- handleSelectPendingRun already only
+  // ever puts one approval_request card into `turns`, so there's no
+  // history to lose.
+  if (isDecider) {
     const decided = status === "finalized" || status === "rejected";
+    const decisionNoun = isReviewer ? "review" : "approval";
     return (
       <div className="flex min-h-screen bg-app">
         <Sidebar activeRunId={runId ?? undefined} onSelectPendingRun={handleSelectPendingRun} refreshKey={refreshKey} />
@@ -261,7 +285,7 @@ export default function Home() {
           ) : (
             <div className="flex-1 flex items-center justify-center bg-surface text-center px-6">
               <div>
-                <h1 className="text-2xl font-semibold text-ink mb-2">Select a request to review</h1>
+                <h1 className="text-2xl font-semibold text-ink mb-2">Select a request to {decisionNoun}</h1>
                 <p className="text-text-secondary text-sm max-w-md mx-auto">
                   Choose a request from the sidebar queue to see its details and approve or reject it.
                 </p>
@@ -315,6 +339,14 @@ export default function Home() {
                     ) : "visual" in turn && turn.visual === "policy_check" ? (
                       <div className="max-w-full animate-cardin">
                         <PolicyCheckVisual citations={turn.citations} evaluation={turn.evaluation} />
+                      </div>
+                    ) : "visual" in turn && turn.visual === "routing_decision" ? (
+                      <div className="max-w-full animate-cardin">
+                        <RoutingDecisionVisual decision={turn.decision} />
+                      </div>
+                    ) : "visual" in turn && turn.visual === "approval_summary" ? (
+                      <div className="max-w-full animate-cardin">
+                        <ApprovalSummaryVisual summary={turn.summary} />
                       </div>
                     ) : (
                       <div className="max-w-full">

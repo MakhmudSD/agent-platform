@@ -4,11 +4,21 @@ export type ClarifyingQuestionCard = { type: "clarifying_question"; question: st
 export type PolicyCitationCard = { type: "policy_citation"; title: string; excerpt: string };
 export type PolicyRuleStatus = "passed" | "binding" | "outstanding";
 export type PolicyRuleCard = { rule: string; status: PolicyRuleStatus; evidence: string };
+export type RoutedTo = "approver" | "reviewer";
+export type RoutingDecision = {
+  routed_to: RoutedTo;
+  reviewer_category: string | null;
+  reason: string;
+  confidence: "high" | "medium" | "low";
+  triggered_rule: string | null;
+};
 export type ApprovalRequestCard = {
   type: "approval_request";
   draft: Record<string, any>;
   policy_citations: PolicyCitationCard[];
   policy_evaluation: PolicyRuleCard[];
+  routing_decision: RoutingDecision | null;
+  approval_summary: string | null;
 };
 export type FinalConfirmationCard = { type: "final_confirmation"; status: "finalized" | "rejected"; draft: Record<string, any>; reason?: string | null };
 export type TextCard = { type: "text"; content: string };
@@ -25,7 +35,7 @@ export type Notification = {
   created_at: string;
 };
 
-export type Role = "requester" | "approver" | "admin";
+export type Role = "requester" | "approver" | "reviewer" | "admin";
 export type AuthUser = { id: string; email: string; name: string; role: Role };
 
 // credentials: "include" on every call -- the backend sets an httpOnly

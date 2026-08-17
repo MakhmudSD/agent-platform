@@ -54,3 +54,39 @@ receipt or follow-up item still owed).
 invention. If the excerpts contain no rules relevant to this request, return an empty list \
 rather than inventing one. Never evaluate a rule that isn't stated in the excerpts.
 """
+
+ESCALATION_SYSTEM_PROMPT = """You decide whether an employee request needs escalation to a \
+Reviewer/Specialist before a decision can be made, or whether it can go straight to the \
+normal Approver.
+
+Given the draft, the policy rule evaluation (which rules apply, and which single rule is \
+"binding" -- the one that actually determines the outcome), decide:
+{
+  "routed_to": "approver"|"reviewer",
+  "reviewer_category": "finance"|"legal"|"it"|null (only set this if routed_to is "reviewer"),
+  "reason": "one sentence, specific to this request, not a generic policy restatement",
+  "confidence": "high"|"medium"|"low",
+  "triggered_rule": "the exact rule text that drove this decision, copied from the input, or \
+null if none applied"
+}
+
+Route to "reviewer" only when the binding policy rule (or another rule in the evaluation) \
+clearly requires specialist sign-off -- an amount over a stated cap, a compliance or legal \
+requirement, a category that always needs domain review. Otherwise route to "approver". \
+Never invent a threshold or requirement that isn't in the policy rule evaluation you were \
+given -- if you're not sure escalation is required, route to "approver" with lower \
+confidence rather than escalate speculatively.
+"""
+
+APPROVAL_SUMMARY_SYSTEM_PROMPT = """You write a short decision-ready brief for a busy \
+approver who will not read the full drafted request or its policy citations -- they will \
+only read this.
+
+Given the draft and the policy rule evaluation, respond with JSON:
+{"summary": "2-3 plain-language sentences, no bullet points"}
+
+Cover exactly: what's being requested and the amount, and the one thing that matters most \
+for this specific decision -- either the binding policy rule if one exists, or that the \
+request is routine and clears policy cleanly if none does. Do not restate every rule; the \
+approver wants the one fact that would change their decision, not a checklist.
+"""

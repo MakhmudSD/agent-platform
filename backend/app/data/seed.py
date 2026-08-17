@@ -19,6 +19,7 @@ from app.services.embedding import embed_text
 DEMO_ACCOUNTS = [
     {"email": "requester@acme-demo.com", "name": "Alice", "password": "demo1234", "role": UserRole.REQUESTER},
     {"email": "approver@acme-demo.com", "name": "Bob", "password": "demo1234", "role": UserRole.APPROVER},
+    {"email": "reviewer@acme-demo.com", "name": "Carol", "password": "demo1234", "role": UserRole.REVIEWER},
     {"email": "admin@acme-demo.com", "name": "Admin", "password": "demo1234", "role": UserRole.ADMIN},
 ]
 
@@ -32,6 +33,34 @@ def _migrate_runs_user_id() -> None:
     with engine.connect() as conn:
         conn.execute(sql_text(
             "ALTER TABLE runs ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE SET NULL"
+        ))
+        conn.commit()
+
+
+def _migrate_userrole_enum() -> None:
+    # Postgres enum types are append-only via ALTER TYPE -- create_all()
+    # doesn't touch an enum type that already exists, so REVIEWER (added
+    # after users already existed) would otherwise never become a valid
+    # value in the DB, even though it's in the Python UserRole enum.
+    # ALTER TYPE ... ADD VALUE can't run inside SQLAlchemy's normal
+    # (implicitly transactional) connection -- needs true autocommit.
+    # Not IF-NOT-EXISTS-safe on older Postgres, so catch "already exists"
+    # instead of trying to pre-check it.
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        try:
+            conn.execute(sql_text("ALTER TYPE userrole ADD VALUE 'REVIEWER'"))
+        except Exception:
+            pass
+
+
+def _migrate_runs_routed_to() -> None:
+    # Same reasoning as _migrate_runs_user_id -- routed_to was added after
+    # runs already existed. Existing rows get NULL (never routed by the
+    # new escalation step), which the app already treats as "goes to the
+    # approver queue" for backwards compatibility.
+    with engine.connect() as conn:
+        conn.execute(sql_text(
+            "ALTER TABLE runs ADD COLUMN IF NOT EXISTS routed_to VARCHAR(20)"
         ))
         conn.commit()
 
@@ -55,7 +84,9 @@ def main():
         conn.commit()
 
     Base.metadata.create_all(bind=engine)  # creates `users` (new table) -- fine
+    _migrate_userrole_enum()  # adds 'reviewer' to the userrole enum type
     _migrate_runs_user_id()  # alters `runs` (existing table) -- create_all can't do this
+    _migrate_runs_routed_to()
 
     db = SessionLocal()
     try:

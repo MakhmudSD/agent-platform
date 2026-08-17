@@ -32,14 +32,15 @@ from app.db.models import Run, RunStatus
 from app.orchestrator.audit import log_event, notify
 from app.orchestrator.graph_state import OrchestratorState
 from app.orchestrator.vertical_employee_request import (
-    DRAFT_SYSTEM_PROMPT, GATHER_SYSTEM_PROMPT, REQUIRED_FIELDS,
+    APPROVAL_SUMMARY_SYSTEM_PROMPT, DRAFT_SYSTEM_PROMPT, ESCALATION_SYSTEM_PROMPT,
+    GATHER_SYSTEM_PROMPT, REQUIRED_FIELDS,
 )
 from app.services.llm import structured_call
 from app.services.retrieval import retrieve_policy
 
 MANAGER_SYSTEM_PROMPT = """You are the manager of a small team handling an employee's \
-internal request. You never do the work yourself — you look at the current state and \
-decide which specialist acts next, and you explain why in one sentence.
+internal request during the gathering phase. You never do the work yourself — you look at \
+the current state and decide which specialist acts next, and you explain why in one sentence.
 
 Specialists you can route to:
 - "intake": gathers/clarifies draft fields from the employee. Choose this if draft_complete \
@@ -49,13 +50,12 @@ draft_complete is true and (no policy has been retrieved yet, OR the last retrie
 judged not relevant and retrieval_attempts is less than 2).
 - "draft": finalizes the request into a reviewable draft using retrieved policy. Choose this \
 once policy has been retrieved and is judged relevant, or retrieval_attempts has reached 2.
-- "interrupt_for_approval": choose this once status is "awaiting_approval" (a final draft \
-already exists and is waiting on a human decision).
-- "done": choose this only if status is already "finalized" or "rejected".
+
+Once a draft is finalized, routing to escalation, review, and approval is a fixed pipeline, \
+not a decision you make -- you are never consulted again after choosing "draft".
 
 Respond with JSON only:
-{"next": "intake"|"policy_research"|"draft"|"interrupt_for_approval"|"done", \
-"reasoning": "one sentence, specific to the state you were given"}
+{"next": "intake"|"policy_research"|"draft", "reasoning": "one sentence, specific to the state you were given"}
 """
 
 RELEVANCE_SYSTEM_PROMPT = """You judge whether retrieved company policy excerpts are \
@@ -289,6 +289,98 @@ def draft_node(state: OrchestratorState, config: RunnableConfig) -> dict:
     # off of independently of the draft text.
     log_event(db, run, "policy_evaluated", {"policy_evaluation": policy_evaluation})
 
+    # Status stays DRAFTING -- escalation_routing_node and
+    # approval_summary_node still need to run before this request is
+    # actually awaiting a human decision. That transition, and the
+    # approval_requested event that goes with it, happens once in
+    # approval_summary_node (the one node both the "approver" and
+    # "reviewer" paths pass through), not here.
+    return {"draft": final_draft, "policy_evaluation": policy_evaluation}
+
+
+# ---------------------------------------------------------------------------
+# escalation_routing (the Escalation/Routing Agent) + approval_summary (the
+# Approval-Summary Agent, and the shared finalize step both paths go through)
+# ---------------------------------------------------------------------------
+
+_ROUTED_TO_VALUES = {"approver", "reviewer"}
+_CONFIDENCE_VALUES = {"high", "medium", "low"}
+
+
+def _valid_routing_decision(raw: object) -> dict:
+    """Same anti-hallucination discipline as _valid_policy_evaluation, but
+    the failure mode here is worse than a dropped card: an invalid value
+    controls who is authorized to decide this request. Defaults to the
+    conservative destination ("approver", the pre-existing behavior) on
+    anything malformed, rather than ever silently escalating."""
+    d = raw if isinstance(raw, dict) else {}
+    routed_to = d.get("routed_to")
+    if routed_to not in _ROUTED_TO_VALUES:
+        routed_to = "approver"
+    confidence = d.get("confidence")
+    if confidence not in _CONFIDENCE_VALUES:
+        confidence = "low"
+    reason = d.get("reason")
+    reason = reason.strip() if isinstance(reason, str) and reason.strip() else "No specific rule triggered escalation."
+    triggered_rule = d.get("triggered_rule")
+    triggered_rule = triggered_rule.strip() if isinstance(triggered_rule, str) and triggered_rule.strip() else None
+    reviewer_category = d.get("reviewer_category")
+    reviewer_category = reviewer_category.strip() if isinstance(reviewer_category, str) and reviewer_category.strip() else None
+    if routed_to == "approver":
+        reviewer_category = None
+    return {
+        "routed_to": routed_to, "reviewer_category": reviewer_category,
+        "reason": reason, "confidence": confidence, "triggered_rule": triggered_rule,
+    }
+
+
+@traced_node("escalation_routing")
+def escalation_routing_node(state: OrchestratorState, config: RunnableConfig) -> dict:
+    """The Escalation/Routing Agent. Its output CONTRACT (this shape) is
+    fixed -- approval_summary_node and the interrupt payload both depend on
+    it. The routing LOGIC behind it (thresholds, which rule triggers
+    escalation) is explicitly a spike: there's no real usage data yet on
+    how often escalation should actually fire, so this reads real policy
+    rule evaluation rather than hardcoded thresholds, and is expected to
+    be revisited once a second vertical or real usage exists to validate
+    against."""
+    db: Session = config["configurable"]["db"]
+    run: Run = config["configurable"]["run"]
+
+    policy_evaluation = state.get("policy_evaluation", [])
+    result = structured_call(
+        ESCALATION_SYSTEM_PROMPT,
+        f"Draft: {state['draft']}\nPolicy rule evaluation: {policy_evaluation}",
+    )
+    routing_decision = _valid_routing_decision(result)
+    run.routed_to = routing_decision["routed_to"]
+    log_event(db, run, "routing_decided", {"routing_decision": routing_decision})
+
+    return {"routing_decision": routing_decision}
+
+
+@traced_node("approval_summary")
+def approval_summary_node(state: OrchestratorState, config: RunnableConfig) -> dict:
+    """The Approval-Summary Agent -- but also the one finalize step both
+    the "approver" and "reviewer" paths pass through, since a request
+    genuinely becomes awaiting-a-human-decision here, not before. Only
+    calls the LLM when routed to an approver: a Reviewer wants full
+    context per case (see AgentVisualStack), not a condensed brief."""
+    db: Session = config["configurable"]["db"]
+    run: Run = config["configurable"]["run"]
+
+    routing_decision = state.get("routing_decision") or {"routed_to": "approver"}
+    approval_summary = None
+    if routing_decision["routed_to"] == "approver":
+        result = structured_call(
+            APPROVAL_SUMMARY_SYSTEM_PROMPT,
+            f"Draft: {state['draft']}\nPolicy rule evaluation: {state.get('policy_evaluation', [])}",
+        )
+        summary = result.get("summary")
+        approval_summary = summary.strip() if isinstance(summary, str) and summary.strip() else None
+        if approval_summary:
+            log_event(db, run, "approval_summary_generated", {"approval_summary": approval_summary})
+
     citations = [
         {"title": p["title"], "excerpt": _excerpt(p["text"])}
         for p in state["retrieved_policies"]
@@ -296,23 +388,24 @@ def draft_node(state: OrchestratorState, config: RunnableConfig) -> dict:
 
     run.status = RunStatus.AWAITING_APPROVAL
     log_event(db, run, "state_transition", {"to": RunStatus.AWAITING_APPROVAL.value})
-    # Same class of bug as the policy_citations gap fixed earlier: this
-    # payload is what the approver sees when they click a run in from the
-    # queue instead of watching it live, so policy_evaluation has to be
-    # here too, not just in the interrupt() payload below.
+    # Same class of bug as the policy_citations gap fixed earlier (commits
+    # 3cdf7fd/d533813): this payload is what a decider sees when they click
+    # a run in from the queue instead of watching it live, so
+    # routing_decision and approval_summary have to be here too, not just
+    # in the interrupt() payload below.
     log_event(db, run, "approval_requested", {
-        "draft": final_draft, "policy_citations": citations, "policy_evaluation": policy_evaluation,
+        "draft": state["draft"], "policy_citations": citations,
+        "policy_evaluation": state.get("policy_evaluation", []),
+        "routing_decision": routing_decision, "approval_summary": approval_summary,
     })
+    destination = "review" if routing_decision["routed_to"] == "reviewer" else "approval"
     notify(
         db, run,
-        f"Awaiting approval: {run.requester_name}'s request "
-        f"({final_draft.get('category', 'request')}, ${final_draft.get('amount', '?')}) needs your review.",
+        f"Awaiting {destination}: {run.requester_name}'s request "
+        f"({state['draft'].get('category', 'request')}, ${state['draft'].get('amount', '?')}) needs your review.",
     )
 
-    return {
-        "draft": final_draft, "status": RunStatus.AWAITING_APPROVAL.value,
-        "policy_evaluation": policy_evaluation,
-    }
+    return {"status": RunStatus.AWAITING_APPROVAL.value, "approval_summary": approval_summary}
 
 
 # ---------------------------------------------------------------------------
@@ -328,6 +421,8 @@ def interrupt_for_approval_node(state: OrchestratorState, config: RunnableConfig
     decision = interrupt({
         "kind": "approval_request", "draft": state["draft"], "policy_citations": citations,
         "policy_evaluation": state.get("policy_evaluation", []),
+        "routing_decision": state.get("routing_decision"),
+        "approval_summary": state.get("approval_summary"),
     })
     return {"approval_decision": decision}
 

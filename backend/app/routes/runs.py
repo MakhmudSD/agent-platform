@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_current_user, require_role
+from app.core.deps import can_decide, get_current_user, require_role
 from app.db.models import Run, User
 from app.db.session import get_db
 from app.orchestrator import graph
@@ -59,9 +59,11 @@ def send_message(run_id: str, body: MessageRequest, user: User = Depends(get_cur
 @router.post("/{run_id}/approval")
 def respond_to_approval(
     run_id: str, body: ApprovalRequest,
-    user: User = Depends(require_role("approver", "admin")), db: Session = Depends(get_db),
+    user: User = Depends(require_role("approver", "reviewer", "admin")), db: Session = Depends(get_db),
 ):
     run = _get_run_or_404(db, run_id)
+    if not can_decide(run, user):
+        raise HTTPException(status_code=403, detail="This request wasn't routed to you")
     card = graph.handle_approval_response(db, run, body.approved, body.reason, approver_name=user.name)
     return {"run_id": run.id, "status": run.status, "card": card.model_dump()}
 
@@ -74,6 +76,7 @@ def get_run(run_id: str, user: User = Depends(get_current_user), db: Session = D
         "status": run.status,
         "requester_name": run.requester_name,
         "draft": run.draft,
+        "routed_to": run.routed_to,
         "events": [
             {"type": e.event_type, "payload": e.payload, "created_at": e.created_at.isoformat()}
             for e in run.events
@@ -86,7 +89,7 @@ def list_runs(user: User = Depends(get_current_user), db: Session = Depends(get_
     runs = db.query(Run).order_by(Run.created_at.desc()).limit(50).all()
     return [
         {"run_id": r.id, "status": r.status, "requester_name": r.requester_name,
-         "user_id": r.user_id, "created_at": r.created_at.isoformat(),
+         "user_id": r.user_id, "routed_to": r.routed_to, "created_at": r.created_at.isoformat(),
          # updated_at is bumped by SQLAlchemy's onupdate on every write, so
          # for a terminal (finalized/rejected) run it's a real proxy for
          # "when it was decided" -- used client-side to compute an honest

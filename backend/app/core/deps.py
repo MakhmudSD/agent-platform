@@ -35,3 +35,15 @@ def require_role(*roles: str):
         return user
 
     return dependency
+
+
+def can_decide(run, user: User) -> bool:
+    """Whether `user` is allowed to approve/reject this specific run --
+    not just "is an approver/reviewer" in general. A run's routed_to
+    (set by escalation_routing_node) picks exactly one decider role;
+    admin can always act, matching the rest of this app's admin-bypasses-
+    ownership pattern (see routes/runs.py's _require_owner_or_admin)."""
+    if user.role.value == "admin":
+        return True
+    routed_to = run.routed_to or "approver"  # legacy/pre-routing rows default to approver
+    return user.role.value == routed_to

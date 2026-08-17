@@ -5,22 +5,23 @@ import { ApprovalRequestCard } from "@/lib/api";
 import { AgentVisualStack } from "@/components/AgentVisuals";
 import { Icon } from "@/components/Icon";
 
-// Approver split screen -- left evidence column is the same real agent
-// visuals the requester saw on their own approval card (AgentVisuals.tsx),
-// right decision column is the request + approve/reject, per
-// design_handoff_approval_flow/README.md's "Approver detail" spec, adapted
-// to this app's real data instead of the reference's scripted example.
-export function ApproverDetail({
-  card,
-  runId,
-  onDecision,
-  busy,
-}: {
+interface ApproverDetailProps {
   card: ApprovalRequestCard;
   runId: string;
   onDecision: (approved: boolean, reason?: string) => void;
   busy: boolean;
-}) {
+}
+
+// Approver/Reviewer split screen -- left evidence column is the same real
+// agent visuals the requester saw on their own approval card
+// (AgentVisuals.tsx), right decision column is the request + approve/
+// reject, per design_handoff_approval_flow/README.md's "Approver detail"
+// spec, adapted to this app's real data instead of the reference's
+// scripted example. Shared by both roles -- which run shows up here at
+// all is decided upstream by routed_to (see Sidebar.tsx).
+export function ApproverDetail(props: ApproverDetailProps) {
+  const { card, runId, onDecision, busy } = props;
+
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
 
@@ -33,6 +34,8 @@ export function ApproverDetail({
           draft={draft}
           policyCitations={card.policy_citations}
           policyEvaluation={card.policy_evaluation}
+          routingDecision={card.routing_decision}
+          approvalSummary={card.approval_summary}
           excludeRunId={runId}
         />
       </div>
@@ -131,7 +134,14 @@ export function ApproverDetail({
   );
 }
 
-function Fact({ label, value, bordered }: { label: string; value: string; bordered?: boolean }) {
+interface FactProps {
+  label: string;
+  value: string;
+  bordered?: boolean;
+}
+
+function Fact(props: FactProps) {
+  const { label, value, bordered } = props;
   return (
     <div className={`py-4 ${bordered ? "px-5 border-l border-hairline-soft" : "pr-5"}`}>
       <p className="mb-1.5 text-xs text-text-tertiary">{label}</p>

@@ -33,11 +33,21 @@ class PolicyRuleCard(BaseModel):
     evidence: str
 
 
+class RoutingDecisionCard(BaseModel):
+    routed_to: Literal["approver", "reviewer"]
+    reviewer_category: str | None = None
+    reason: str
+    confidence: Literal["high", "medium", "low"]
+    triggered_rule: str | None = None
+
+
 class ApprovalRequestCard(BaseModel):
     type: Literal["approval_request"] = "approval_request"
     draft: dict
     policy_citations: list[PolicyCitationCard] = []
     policy_evaluation: list[PolicyRuleCard] = []
+    routing_decision: RoutingDecisionCard | None = None
+    approval_summary: str | None = None
 
 
 class FinalConfirmationCard(BaseModel):
