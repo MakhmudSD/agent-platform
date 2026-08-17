@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, Card, PolicyCitationCard } from "@/lib/api";
+import { api, Card, PolicyCitationCard, PolicyRuleCard } from "@/lib/api";
 import { AuditLogEntry, LiveEvent, RunSocket } from "@/lib/ws";
 import { CardRenderer } from "@/components/CardRenderer";
 import { Sidebar } from "@/components/Sidebar";
@@ -16,12 +16,13 @@ import { useAuth } from "@/lib/auth";
 // The design's core idea -- "the agent answers with visuals instead of
 // paragraphs" -- means routing and policy-check render inline in the
 // thread the moment the backend has real state for them (first question
-// asked -> routing; policy_retrieved event -> policy check), not just
-// bundled at the end on the approval card.
+// asked -> routing; policy_retrieved -> raw citations; policy_evaluated ->
+// the real per-rule checklist once draft_node's evaluation call lands),
+// not just bundled at the end on the approval card.
 type Turn =
   | { from: "user" | "agent"; card?: Card; text?: string }
   | { from: "agent"; visual: "routing"; policyChecked: boolean }
-  | { from: "agent"; visual: "policy_check"; citations: PolicyCitationCard[] };
+  | { from: "agent"; visual: "policy_check"; citations: PolicyCitationCard[]; evaluation: PolicyRuleCard[] };
 
 export default function Home() {
   const router = useRouter();
@@ -75,6 +76,23 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
+  // Replaces the existing inline "policy_check" turn in place (keeping its
+  // position in the thread) rather than appending, so a retry or a later
+  // rule evaluation upgrades the same card instead of stacking a second,
+  // possibly contradictory one. Falls back to appending if none exists yet.
+  function upsertPolicyCheckTurn(patch: { citations?: PolicyCitationCard[]; evaluation?: PolicyRuleCard[] }) {
+    setTurns((t) => {
+      const idx = t.findIndex((turn) => "visual" in turn && turn.visual === "policy_check");
+      if (idx === -1) {
+        return [...t, { from: "agent", visual: "policy_check", citations: patch.citations ?? [], evaluation: patch.evaluation ?? [] }];
+      }
+      const existing = t[idx] as Extract<Turn, { visual: "policy_check" }>;
+      const next = [...t];
+      next[idx] = { ...existing, ...patch };
+      return next;
+    });
+  }
+
   function handleEvent(event: LiveEvent) {
     switch (event.type) {
       case "node_started":
@@ -98,7 +116,17 @@ export default function Home() {
           const citations: PolicyCitationCard[] = (event.payload.matches ?? []).map((m: any) => ({
             type: "policy_citation", title: m.title, excerpt: m.excerpt,
           }));
-          setTurns((t) => [...t, { from: "agent", visual: "policy_check", citations }]);
+          upsertPolicyCheckTurn({ citations, evaluation: [] });
+        }
+        // Fires once draft_node's rule evaluation lands -- upgrades the
+        // same inline card from "which documents matched" to the real
+        // per-rule checklist, in place, instead of appending a second
+        // card. A second card would show two checklists for one request
+        // if policy_research_node retried (it does, on a not-relevant
+        // judgment) -- the later evaluation always supersedes the earlier
+        // retrieval, so it replaces rather than adds.
+        if (event.event_type === "policy_evaluated") {
+          upsertPolicyCheckTurn({ evaluation: event.payload.policy_evaluation ?? [] });
         }
         break;
       case "llm_token":
@@ -142,8 +170,9 @@ export default function Home() {
   // tab itself started as Requester) -- the sidebar's pending-approval
   // queue had no way to load a *different* run in. Reconstructs the
   // approval_request card from GET /runs/{id}'s event log -- the
-  // "approval_requested" event carries the same policy_citations the live
-  // interrupt payload had, so the evidence view is identical either way.
+  // "approval_requested" event carries the same policy_citations and
+  // policy_evaluation the live interrupt payload had, so the evidence view
+  // is identical either way.
   async function handleSelectPendingRun(selectedRunId: string) {
     if (busy) return;
     setWsError(null);
@@ -160,9 +189,13 @@ export default function Home() {
     }
     const approvalEvent = [...run.events].reverse().find((e) => e.type === "approval_requested");
     const policyCitations = approvalEvent?.payload?.policy_citations ?? [];
+    const policyEvaluation = approvalEvent?.payload?.policy_evaluation ?? [];
     setRunId(run.run_id);
     setStatus(run.status);
-    setTurns([{ from: "agent", card: { type: "approval_request", draft: run.draft, policy_citations: policyCitations } }]);
+    setTurns([{
+      from: "agent",
+      card: { type: "approval_request", draft: run.draft, policy_citations: policyCitations, policy_evaluation: policyEvaluation },
+    }]);
     setLiveDraft(run.draft);
     setAuditLog([]);
     setStreamText("");
@@ -281,7 +314,7 @@ export default function Home() {
                       </div>
                     ) : "visual" in turn && turn.visual === "policy_check" ? (
                       <div className="max-w-full animate-cardin">
-                        <PolicyCheckVisual citations={turn.citations} />
+                        <PolicyCheckVisual citations={turn.citations} evaluation={turn.evaluation} />
                       </div>
                     ) : (
                       <div className="max-w-full">

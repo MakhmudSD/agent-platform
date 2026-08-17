@@ -17,6 +17,10 @@ class OrchestratorState(TypedDict, total=False):
     messages: list[dict]  # [{"role": "user", "content": str}, ...]
     retrieval_attempts: int
     retrieved_policies: list[dict]  # [{title, doc_id, score, text}, ...]
+    # [{rule, status: "passed"|"binding"|"outstanding", evidence}, ...] --
+    # set by draft_node from the same structured_call that already reads
+    # the retrieved excerpts, not a separate LLM call.
+    policy_evaluation: list[dict]
     status: str  # mirrors RunStatus.value
 
     # Routing/plumbing only — not part of the spec's five state fields.

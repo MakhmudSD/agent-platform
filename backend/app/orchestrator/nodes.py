@@ -226,6 +226,40 @@ def _excerpt(text: str) -> str:
     return text[:_EXCERPT_LIMIT].rstrip() + "..."
 
 
+_POLICY_RULE_STATUSES = {"passed", "binding", "outstanding"}
+
+
+def _valid_policy_evaluation(raw: object, source_text: str) -> list[dict]:
+    """Anti-hallucination guard on the model's policy_evaluation output --
+    drops any entry whose status isn't one of the three the design defines,
+    or whose "evidence" isn't actually traceable to the retrieved excerpt
+    text (the model was told to quote, not paraphrase; this catches it
+    when it doesn't). At most one "binding" rule survives, matching the
+    design's "one teal element per card" rule."""
+    if not isinstance(raw, list):
+        return []
+    normalized_source = " ".join(source_text.lower().split())
+    seen_binding = False
+    out: list[dict] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        rule, status, evidence = item.get("rule"), item.get("status"), item.get("evidence")
+        if not (isinstance(rule, str) and isinstance(status, str) and isinstance(evidence, str)):
+            continue
+        if status not in _POLICY_RULE_STATUSES or not rule.strip() or not evidence.strip():
+            continue
+        normalized_evidence = " ".join(evidence.lower().split())
+        if normalized_evidence not in normalized_source:
+            continue
+        if status == "binding":
+            if seen_binding:
+                status = "passed"
+            seen_binding = True
+        out.append({"rule": rule.strip(), "status": status, "evidence": evidence.strip()})
+    return out
+
+
 @traced_node("draft")
 def draft_node(state: OrchestratorState, config: RunnableConfig) -> dict:
     db: Session = config["configurable"]["db"]
@@ -245,9 +279,15 @@ def draft_node(state: OrchestratorState, config: RunnableConfig) -> dict:
     final_draft = result.get("final_draft", state["draft"])
     final_draft["requester"] = run.requester_name
     run.draft = final_draft
+    policy_evaluation = _valid_policy_evaluation(result.get("policy_evaluation"), policy_excerpt_text)
     log_event(db, run, "draft_finalized_for_review", {
         "draft": final_draft, "policy_notes": result.get("policy_notes", ""),
     })
+    # Own event, not folded into draft_finalized_for_review -- keeps each
+    # log_event single-purpose like the rest of this file, and gives the
+    # rule checklist an event_type the frontend can key an inline visual
+    # off of independently of the draft text.
+    log_event(db, run, "policy_evaluated", {"policy_evaluation": policy_evaluation})
 
     citations = [
         {"title": p["title"], "excerpt": _excerpt(p["text"])}
@@ -256,14 +296,23 @@ def draft_node(state: OrchestratorState, config: RunnableConfig) -> dict:
 
     run.status = RunStatus.AWAITING_APPROVAL
     log_event(db, run, "state_transition", {"to": RunStatus.AWAITING_APPROVAL.value})
-    log_event(db, run, "approval_requested", {"draft": final_draft, "policy_citations": citations})
+    # Same class of bug as the policy_citations gap fixed earlier: this
+    # payload is what the approver sees when they click a run in from the
+    # queue instead of watching it live, so policy_evaluation has to be
+    # here too, not just in the interrupt() payload below.
+    log_event(db, run, "approval_requested", {
+        "draft": final_draft, "policy_citations": citations, "policy_evaluation": policy_evaluation,
+    })
     notify(
         db, run,
         f"Awaiting approval: {run.requester_name}'s request "
         f"({final_draft.get('category', 'request')}, ${final_draft.get('amount', '?')}) needs your review.",
     )
 
-    return {"draft": final_draft, "status": RunStatus.AWAITING_APPROVAL.value}
+    return {
+        "draft": final_draft, "status": RunStatus.AWAITING_APPROVAL.value,
+        "policy_evaluation": policy_evaluation,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +327,7 @@ def interrupt_for_approval_node(state: OrchestratorState, config: RunnableConfig
     ]
     decision = interrupt({
         "kind": "approval_request", "draft": state["draft"], "policy_citations": citations,
+        "policy_evaluation": state.get("policy_evaluation", []),
     })
     return {"approval_decision": decision}
 

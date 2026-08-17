@@ -27,10 +27,17 @@ class PolicyCitationCard(BaseModel):
     excerpt: str
 
 
+class PolicyRuleCard(BaseModel):
+    rule: str
+    status: Literal["passed", "binding", "outstanding"]
+    evidence: str
+
+
 class ApprovalRequestCard(BaseModel):
     type: Literal["approval_request"] = "approval_request"
     draft: dict
     policy_citations: list[PolicyCitationCard] = []
+    policy_evaluation: list[PolicyRuleCard] = []
 
 
 class FinalConfirmationCard(BaseModel):

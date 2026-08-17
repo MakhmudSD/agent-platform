@@ -37,7 +37,7 @@ from app.db.models import Run, RunStatus
 from app.orchestrator.audit import log_event
 from app.orchestrator.cards import (
     ApprovalRequestCard, Card, ClarifyingQuestionCard, FinalConfirmationCard,
-    PolicyCitationCard,
+    PolicyCitationCard, PolicyRuleCard,
 )
 from app.orchestrator.graph_state import OrchestratorState
 from app.orchestrator.nodes import (
@@ -113,7 +113,8 @@ def _card_from_interrupt(payload: dict) -> Card:
         return ClarifyingQuestionCard(question=payload["question"], field="unknown")
     if kind == "approval_request":
         citations = [PolicyCitationCard(**c) for c in payload.get("policy_citations", [])]
-        return ApprovalRequestCard(draft=payload["draft"], policy_citations=citations)
+        evaluation = [PolicyRuleCard(**e) for e in payload.get("policy_evaluation", [])]
+        return ApprovalRequestCard(draft=payload["draft"], policy_citations=citations, policy_evaluation=evaluation)
     raise ValueError(f"Unrecognized interrupt payload kind: {kind!r} in {payload!r}")
 
 

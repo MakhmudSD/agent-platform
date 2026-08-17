@@ -29,7 +29,12 @@ export function ApproverDetail({
   return (
     <div className="flex-1 flex min-h-0">
       <div className="w-[470px] shrink-0 px-[30px] py-[26px] bg-app border-r border-hairline overflow-y-auto">
-        <AgentVisualStack draft={draft} policyCitations={card.policy_citations} excludeRunId={runId} />
+        <AgentVisualStack
+          draft={draft}
+          policyCitations={card.policy_citations}
+          policyEvaluation={card.policy_evaluation}
+          excludeRunId={runId}
+        />
       </div>
 
       <div className="flex-1 min-w-0 flex flex-col gap-[22px] px-9 pt-[30px] pb-7 bg-surface overflow-y-auto">

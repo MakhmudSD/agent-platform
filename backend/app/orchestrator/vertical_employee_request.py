@@ -35,8 +35,22 @@ retrieved company policy context if relevant.
 Given the draft fields and any policy excerpts, respond with JSON:
 {
   "final_draft": {...the same fields, cleaned up, plus "requester" if provided...},
-  "policy_notes": "one sentence noting which policy (if any) applies, or empty string"
+  "policy_notes": "one sentence noting which policy (if any) applies, or empty string",
+  "policy_evaluation": [
+    {"rule": "...", "status": "passed"|"binding"|"outstanding", "evidence": "..."}
+  ]
 }
 
-Do not invent policy content that wasn't provided in the excerpts.
+For policy_evaluation, extract each distinct rule stated in the policy excerpts that is \
+actually relevant to this request, and judge the draft against it:
+- "passed": the draft clearly satisfies the rule.
+- "binding": the rule is what determines or changes the outcome for this specific request \
+(e.g. it sets which approver is needed, or whether extra justification is required because \
+of the amount). At most one rule should be "binding".
+- "outstanding": the rule applies but isn't yet satisfied by anything in the draft (e.g. a \
+receipt or follow-up item still owed).
+
+"evidence" must be a short span taken directly from the excerpt text, not a paraphrase or \
+invention. If the excerpts contain no rules relevant to this request, return an empty list \
+rather than inventing one. Never evaluate a rule that isn't stated in the excerpts.
 """

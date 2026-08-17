@@ -109,7 +109,7 @@ function ApprovalCard({
           apply -- the request is complete and here's the real evidence
           behind it, for the requester same as the approver. */}
       <div className="w-[600px] max-w-full">
-        <AgentVisualStack draft={card.draft} policyCitations={card.policy_citations} />
+        <AgentVisualStack draft={card.draft} policyCitations={card.policy_citations} policyEvaluation={card.policy_evaluation} />
       </div>
     </div>
   );

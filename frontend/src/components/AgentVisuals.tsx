@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, PolicyCitationCard } from "@/lib/api";
+import { api, PolicyCitationCard, PolicyRuleCard } from "@/lib/api";
 import { approvalConfidence, comparableDecisions, decisionLatencyLabel, extractPolicyCap } from "@/lib/stats";
 
 // The four agent-visual cards this app can build for real from data it
@@ -44,7 +44,55 @@ export function RoutingVisual({ policyChecked }: { policyChecked: boolean }) {
   );
 }
 
-export function PolicyCheckVisual({ citations }: { citations: PolicyCitationCard[] }) {
+// Per README line 50/61: each rule row is a marker + rule sentence + a
+// muted evidence clause. Marker reflects the rule's real effect on this
+// request -- "binding" (at most one, enforced server-side) is the rule
+// that actually determines the outcome, "outstanding" is a rule that
+// applies but isn't satisfied yet, "passed" is everything else that's
+// clear. This is a real per-request LLM judgment over the retrieved
+// policy text (backend/app/orchestrator/nodes.py's draft_node), not a
+// static list -- "evidence" is required to be a verbatim span from the
+// excerpt, checked server-side before it ever reaches here.
+function PolicyRuleRow({ rule }: { rule: PolicyRuleCard }) {
+  const marker =
+    rule.status === "binding" ? (
+      <span className="w-4 h-4 mt-0.5 shrink-0 rounded-[5px] bg-accent text-white text-[10.5px] font-semibold leading-4 text-center">!</span>
+    ) : rule.status === "outstanding" ? (
+      <span className="w-4 h-4 mt-0.5 shrink-0 rounded-[5px] border-[1.5px] border-placeholder" />
+    ) : (
+      <span className="w-4 h-4 mt-0.5 shrink-0 rounded-[5px] bg-ink-3 text-app text-[10.5px] leading-4 text-center">✓</span>
+    );
+  return (
+    <div className="flex gap-[11px]">
+      {marker}
+      <p className="text-[13.5px] leading-[1.5] text-ink-2">
+        {rule.rule}{" "}
+        <span className="text-text-tertiary">{rule.evidence}</span>
+      </p>
+    </div>
+  );
+}
+
+export function PolicyCheckVisual({
+  evaluation,
+  citations,
+}: {
+  evaluation: PolicyRuleCard[];
+  citations: PolicyCitationCard[];
+}) {
+  if (evaluation.length > 0) {
+    return (
+      <div className={CARD}>
+        <div className={HEADER}>
+          <span className={TITLE}>Company policy</span>
+          <span className={META}>{evaluation.length} of {evaluation.length} clear</span>
+        </div>
+        <div className="space-y-2.5">
+          {evaluation.map((rule, i) => <PolicyRuleRow key={i} rule={rule} />)}
+        </div>
+      </div>
+    );
+  }
   if (citations.length === 0) {
     return (
       <div className={CARD}>
@@ -55,6 +103,9 @@ export function PolicyCheckVisual({ citations }: { citations: PolicyCitationCard
       </div>
     );
   }
+  // No rules could be extracted yet (e.g. still mid-retrieval, before
+  // draft_node's evaluation call has run) -- show what's real so far:
+  // which documents matched, not a fabricated checklist.
   return (
     <div className={CARD}>
       <div className={HEADER}>
@@ -159,10 +210,12 @@ export function ComparableDecisionsVisual({ category, decisions }: { category: s
 export function AgentVisualStack({
   draft,
   policyCitations,
+  policyEvaluation = [],
   excludeRunId,
 }: {
   draft: Record<string, any>;
   policyCitations: PolicyCitationCard[];
+  policyEvaluation?: PolicyRuleCard[];
   excludeRunId?: string;
 }) {
   const [runs, setRuns] = useState<any[]>([]);
@@ -178,7 +231,7 @@ export function AgentVisualStack({
   return (
     <div className="flex flex-col gap-3.5">
       <RoutingVisual policyChecked={policyCitations.length > 0} />
-      <PolicyCheckVisual citations={policyCitations} />
+      <PolicyCheckVisual evaluation={policyEvaluation} citations={policyCitations} />
       {cap != null && draft.amount != null && <CostCapVisual amount={draft.amount} cap={cap} />}
       <ComparableDecisionsVisual category={draft.category} decisions={comparable} />
       {confidence && <LikelyOutcomeVisual confidence={confidence} />}

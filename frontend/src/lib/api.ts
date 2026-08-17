@@ -2,7 +2,14 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export type ClarifyingQuestionCard = { type: "clarifying_question"; question: string; field: string };
 export type PolicyCitationCard = { type: "policy_citation"; title: string; excerpt: string };
-export type ApprovalRequestCard = { type: "approval_request"; draft: Record<string, any>; policy_citations: PolicyCitationCard[] };
+export type PolicyRuleStatus = "passed" | "binding" | "outstanding";
+export type PolicyRuleCard = { rule: string; status: PolicyRuleStatus; evidence: string };
+export type ApprovalRequestCard = {
+  type: "approval_request";
+  draft: Record<string, any>;
+  policy_citations: PolicyCitationCard[];
+  policy_evaluation: PolicyRuleCard[];
+};
 export type FinalConfirmationCard = { type: "final_confirmation"; status: "finalized" | "rejected"; draft: Record<string, any>; reason?: string | null };
 export type TextCard = { type: "text"; content: string };
 
