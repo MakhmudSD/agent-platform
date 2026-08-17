@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { summarize } from "@/lib/stats";
@@ -54,6 +54,7 @@ const EVENT_ICONS: Record<string, string> = {
 
 export default function History() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, loading: authLoading } = useAuth();
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [selected, setSelected] = useState<RunDetail | null>(null);
@@ -67,18 +68,28 @@ export default function History() {
     api.listRuns().then(setRuns).catch(() => {});
   }, [user]);
 
-  if (authLoading || !user) {
-    return <div className="min-h-screen bg-app" />;
-  }
-
   async function openRun(runId: string) {
     const detail = await api.getRun(runId);
     setSelected(detail);
   }
 
+  // Deep-link from /inbox: clicking a "Your request was approved/rejected"
+  // notification lands here with ?run=<id> instead of making the requester
+  // find it in the list themselves.
+  useEffect(() => {
+    if (!user || selected) return;
+    const requestedRun = searchParams.get("run");
+    if (requestedRun) openRun(requestedRun);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, searchParams, selected]);
+
+  if (authLoading || !user) {
+    return <div className="min-h-screen bg-app" />;
+  }
+
   return (
     <div className="flex min-h-screen bg-app">
-      <Sidebar activeRunId={selected?.run_id} />
+      <Sidebar />
 
       <div className="flex-1 flex flex-col h-screen min-w-0">
         <div className="h-14 shrink-0 flex items-center px-[34px] border-b border-hairline">

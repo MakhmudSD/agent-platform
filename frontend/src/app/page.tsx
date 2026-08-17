@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api, Card, PolicyCitationCard, PolicyRuleCard, RoutingDecision, TranscriptEntry } from "@/lib/api";
 import { AuditLogEntry, LiveEvent, RunSocket } from "@/lib/ws";
 import { CardRenderer } from "@/components/CardRenderer";
@@ -50,6 +50,7 @@ function transcriptFromEvents(events: { type: string; payload: Record<string, an
 
 export default function Home() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, loading: authLoading } = useAuth();
   // Admin can act as either decider (matches the rest of the app's
   // admin-bypasses-ownership pattern). Approver and Reviewer each get the
@@ -74,10 +75,6 @@ export default function Home() {
   const [liveDraft, setLiveDraft] = useState<Record<string, any> | null>(null);
   const [streamText, setStreamText] = useState("");
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
-  // Bumped whenever a WS "result" lands, so Sidebar knows to refetch its
-  // pending-approval list -- otherwise a just-approved/rejected run lingers
-  // in that list until role or activeRunId happens to change.
-  const [refreshKey, setRefreshKey] = useState(0);
   // Client-observed timestamp used only for RunProgress's elapsed clock --
   // not persisted, not authoritative, just "when this browser tab first saw
   // this run start."
@@ -193,7 +190,6 @@ export default function Home() {
         setTurns((t) => [...t, { from: "agent", card: event.card }]);
         setBusy(false);
         setLiveNode(null);
-        setRefreshKey((k) => k + 1);
         break;
       case "error":
         setWsError(event.detail);
@@ -222,8 +218,8 @@ export default function Home() {
 
   // Fixes a real gap: without this, an Approver could only ever act on
   // whichever run happened to already be loaded in this tab (e.g. one this
-  // tab itself started as Requester) -- the sidebar's pending-approval
-  // queue had no way to load a *different* run in. Reconstructs the
+  // tab itself started as Requester) -- there was no way to load a
+  // *different* run in. Reconstructs the
   // approval_request card from GET /runs/{id}'s event log -- the
   // "approval_requested" event carries the same policy_citations and
   // policy_evaluation the live interrupt payload had, so the evidence view
@@ -263,6 +259,18 @@ export default function Home() {
     setLiveNode(null);
   }
 
+  // Deep-link from /inbox: a decider clicking a pending request there
+  // navigates to /?run=<id> instead of /inbox rendering the decision
+  // screen itself, so there's one real place this view gets built. Only
+  // fires once per landing (not on every searchParams change) -- once the
+  // run is loaded into `turns`, the query param has done its job.
+  useEffect(() => {
+    if (!isDecider || runId) return;
+    const requestedRun = searchParams.get("run");
+    if (requestedRun) handleSelectPendingRun(requestedRun);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDecider, searchParams, runId]);
+
   function handleApproval(approved: boolean, reason?: string) {
     if (!isDecider || !runId || busy || !socketRef.current) return;
     setWsError(null);
@@ -289,7 +297,7 @@ export default function Home() {
     const decisionNoun = isReviewer ? "review" : "approval";
     return (
       <div className="flex min-h-screen bg-app">
-        <Sidebar activeRunId={runId ?? undefined} onSelectPendingRun={handleSelectPendingRun} refreshKey={refreshKey} />
+        <Sidebar />
         <div className="flex-1 flex flex-col h-screen min-w-0">
           {latestApprovalCard && (
             <div className="h-14 shrink-0 flex items-center justify-between px-[34px] border-b border-hairline">
@@ -318,7 +326,7 @@ export default function Home() {
                 <p className={`text-lg font-semibold mb-1 ${status === "finalized" ? "text-accent-dark" : "text-warning-strong"}`}>
                   {status === "finalized" ? "Request approved" : "Sent back to requester"}
                 </p>
-                <p className="text-sm text-text-secondary">Pick another request from the sidebar to keep reviewing.</p>
+                <p className="text-sm text-text-secondary">Pick another request from your inbox to keep reviewing.</p>
               </div>
             </div>
           ) : (
@@ -326,7 +334,7 @@ export default function Home() {
               <div>
                 <h1 className="text-2xl font-semibold text-ink mb-2">Select a request to {decisionNoun}</h1>
                 <p className="text-text-secondary text-sm max-w-md mx-auto">
-                  Choose a request from the sidebar queue to see its details and approve or reject it.
+                  Open your <a href="/inbox" className="underline hover:text-ink">inbox</a> to see what's waiting and pick one to {decisionNoun}.
                 </p>
               </div>
             </div>
@@ -338,7 +346,7 @@ export default function Home() {
 
   return (
     <div className="flex min-h-screen bg-app">
-      <Sidebar activeRunId={runId ?? undefined} onSelectPendingRun={handleSelectPendingRun} refreshKey={refreshKey} />
+      <Sidebar />
 
       <div className="flex-1 flex flex-col h-screen min-w-0">
         {turns.length > 0 && (
