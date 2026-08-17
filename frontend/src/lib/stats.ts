@@ -13,6 +13,12 @@ type RunLike = {
   draft: Record<string, any> | null;
 };
 
+function formatDurationHours(hours: number): string {
+  if (hours < 1) return `${Math.max(1, Math.round(hours * 60))}m`;
+  if (hours < 20) return `${Math.round(hours)}h`;
+  return `${Math.round(hours / 24)}d`;
+}
+
 // updated_at is bumped by the DB on every write (SQLAlchemy onupdate); for
 // a terminal run that last write *is* the decision, so created_at ->
 // updated_at is a real proxy for decision latency, not a guess.
@@ -26,8 +32,16 @@ export function typicalDecisionLabel(runs: RunLike[]): string | null {
   const avgMs = durationsMs.reduce((a, b) => a + b, 0) / durationsMs.length;
   const hours = avgMs / 3_600_000;
   if (hours < 6) return "Same day";
-  if (hours < 20) return `~${Math.round(hours)}h`;
-  return `~${Math.round(hours / 24)}d`;
+  return `~${formatDurationHours(hours)}`;
+}
+
+// Same created_at -> updated_at proxy as typicalDecisionLabel, but for one
+// run -- the design's comparable-decisions table has a "decided in" column
+// per row, not just an aggregate.
+export function decisionLatencyLabel(run: RunLike): string | null {
+  const ms = new Date(run.updated_at).getTime() - new Date(run.created_at).getTime();
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  return formatDurationHours(ms / 3_600_000);
 }
 
 // Past decisions on requests in the same category -- real rows from the

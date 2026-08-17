@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, PolicyCitationCard } from "@/lib/api";
-import { approvalConfidence, comparableDecisions, extractPolicyCap } from "@/lib/stats";
+import { approvalConfidence, comparableDecisions, decisionLatencyLabel, extractPolicyCap } from "@/lib/stats";
 
 // The four agent-visual cards this app can build for real from data it
 // actually has (RAG policy citations, run history for comparables/
@@ -127,19 +127,20 @@ export function ComparableDecisionsVisual({ category, decisions }: { category: s
       </div>
       {decisions.length > 0 ? (
         <>
-          <div className="grid grid-cols-[1.6fr_.8fr_1fr] gap-2.5 pb-2 font-mono text-[11px] font-medium tracking-[.06em] text-text-quaternary">
-            <span>REQUEST</span><span>AMOUNT</span><span>OUTCOME</span>
+          <div className="grid grid-cols-[1.4fr_.7fr_.8fr_.7fr] gap-2.5 pb-2 font-mono text-[11px] font-medium tracking-[.06em] text-text-quaternary">
+            <span>REQUEST</span><span>AMOUNT</span><span>OUTCOME</span><span>DECIDED IN</span>
           </div>
           {decisions.map((r) => (
             <div
               key={r.run_id}
-              className={`grid grid-cols-[1.6fr_.8fr_1fr] gap-2.5 py-[9px] border-t border-hairline-soft text-[13px] items-center ${
+              className={`grid grid-cols-[1.4fr_.7fr_.8fr_.7fr] gap-2.5 py-[9px] border-t border-hairline-soft text-[13px] items-center ${
                 r.status === "rejected" ? "text-warning-ink" : "text-ink-2"
               }`}
             >
               <span className="truncate">{r.draft?.category ?? "Request"}</span>
               <span className="font-mono text-[12.5px]">${r.draft?.amount ?? "—"}</span>
               <span className="capitalize">{r.status === "finalized" ? "Approved" : "Rejected"}</span>
+              <span className="font-mono text-[12.5px] text-text-tertiary">{decisionLatencyLabel(r) ?? "—"}</span>
             </div>
           ))}
         </>
