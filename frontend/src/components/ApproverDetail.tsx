@@ -27,9 +27,42 @@ export function ApproverDetail(props: ApproverDetailProps) {
 
   const draft = card.draft;
 
+  const requesterInitials = (draft.requester ?? "?")
+    .trim()
+    .split(/\s+/)
+    .map((p: string) => p[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
   return (
     <div className="flex-1 flex min-h-0">
       <div className="w-[470px] shrink-0 px-[30px] py-[26px] bg-app border-r border-hairline overflow-y-auto">
+        {card.transcript && card.transcript.length > 0 && (
+          <div className="mb-6">
+            <p className="font-mono text-[11px] font-medium text-text-tertiary uppercase tracking-[.12em]">
+              What the agent established
+            </p>
+            <p className="mt-1 mb-4 text-[13px] text-text-tertiary">
+              The real conversation that produced this request.
+            </p>
+            <div className="flex flex-col gap-3">
+              {card.transcript.map((entry, i) => (
+                <div key={i} className="flex items-start gap-2.5">
+                  <span
+                    className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-semibold ${
+                      entry.from === "requester" ? "bg-neutral-fill text-ink-2" : "bg-ink text-app"
+                    }`}
+                  >
+                    {entry.from === "requester" ? requesterInitials : <Icon name="smart_toy" size={13} filled />}
+                  </span>
+                  <p className="text-[13px] leading-[1.5] text-ink-2 pt-0.5">{entry.text}</p>
+                </div>
+              ))}
+            </div>
+            <div className="h-px bg-hairline-soft mt-5" />
+          </div>
+        )}
         <AgentVisualStack
           draft={draft}
           policyCitations={card.policy_citations}

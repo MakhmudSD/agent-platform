@@ -1,24 +1,21 @@
-import { isTerminalStatus, RUN_STAGES, stageIndexForStatus } from "@/lib/progress";
+import { RUN_STAGES, stageIndexForStatus } from "@/lib/progress";
 
 interface MiniProgressProps {
   status: string;
 }
 
-// Five-segment strip rendered under each sidebar row. Purely a read-out of
-// the run's real `status` field (see lib/progress.ts) -- never decorative.
+// Single hairline track, same primitive as the right panel's "N of M
+// details captured" bar (LivePanel.tsx) -- a sidebar row is a compressed
+// version of that same progress, not a different visual language.
 export function MiniProgress(props: MiniProgressProps) {
   const { status } = props;
   const idx = stageIndexForStatus(status);
-  const terminal = isTerminalStatus(status);
+  const pct = status === "rejected" ? 100 : (idx / (RUN_STAGES.length - 1)) * 100;
+  const fillCls = status === "rejected" ? "bg-warning-strong" : status === "finalized" ? "bg-ink" : "bg-accent";
 
   return (
-    <div className="flex gap-0.5 mt-1.5" aria-hidden="true">
-      {RUN_STAGES.map((_, i) => {
-        let cls = "bg-neutral-fill-2";
-        if (terminal || i < idx) cls = "bg-ink";
-        else if (i === idx) cls = "bg-accent animate-pulse";
-        return <span key={i} className={`h-1 flex-1 rounded-full ${cls}`} />;
-      })}
+    <div className="h-1 rounded-full bg-neutral-fill-2 overflow-hidden mt-1.5" aria-hidden="true">
+      <span className={`block h-1 rounded-full transition-[width] duration-[450ms] ${fillCls}`} style={{ width: `${pct}%` }} />
     </div>
   );
 }

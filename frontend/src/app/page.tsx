@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, Card, PolicyCitationCard, PolicyRuleCard, RoutingDecision } from "@/lib/api";
+import { api, Card, PolicyCitationCard, PolicyRuleCard, RoutingDecision, TranscriptEntry } from "@/lib/api";
 import { AuditLogEntry, LiveEvent, RunSocket } from "@/lib/ws";
 import { CardRenderer } from "@/components/CardRenderer";
 import { Sidebar } from "@/components/Sidebar";
@@ -27,6 +27,26 @@ type Turn =
   | { from: "agent"; visual: "policy_check"; citations: PolicyCitationCard[]; evaluation: PolicyRuleCard[] }
   | { from: "agent"; visual: "routing_decision"; decision: RoutingDecision }
   | { from: "agent"; visual: "approval_summary"; summary: string };
+
+// Reconstructs the real conversation that produced a draft, for the
+// Approver/Reviewer's evidence column -- per design_handoff_approval_flow's
+// stated goal ("the approver never has to reconstruct context before
+// deciding"), not a summary of it. Reads only events that carry real
+// message text; anything else (state_transition, policy_retrieved, ...) is
+// audit trail, not conversation, and stays out of the transcript.
+function transcriptFromEvents(events: { type: string; payload: Record<string, any> }[]): TranscriptEntry[] {
+  const entries: TranscriptEntry[] = [];
+  for (const e of events) {
+    if (e.type === "run_started" && e.payload?.initial_message) {
+      entries.push({ from: "requester", text: e.payload.initial_message });
+    } else if (e.type === "clarifying_question_asked" && e.payload?.question) {
+      entries.push({ from: "agent", text: e.payload.question });
+    } else if (e.type === "user_message" && e.payload?.message) {
+      entries.push({ from: "requester", text: e.payload.message });
+    }
+  }
+  return entries;
+}
 
 export default function Home() {
   const router = useRouter();
@@ -234,6 +254,7 @@ export default function Home() {
       card: {
         type: "approval_request", draft: run.draft, policy_citations: policyCitations,
         policy_evaluation: policyEvaluation, routing_decision: routingDecision, approval_summary: approvalSummary,
+        transcript: transcriptFromEvents(run.events),
       },
     }]);
     setLiveDraft(run.draft);

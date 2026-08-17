@@ -12,6 +12,7 @@ export type RoutingDecision = {
   confidence: "high" | "medium" | "low";
   triggered_rule: string | null;
 };
+export type TranscriptEntry = { from: "requester" | "agent"; text: string };
 export type ApprovalRequestCard = {
   type: "approval_request";
   draft: Record<string, any>;
@@ -19,6 +20,11 @@ export type ApprovalRequestCard = {
   policy_evaluation: PolicyRuleCard[];
   routing_decision: RoutingDecision | null;
   approval_summary: string | null;
+  // Approver/Reviewer only -- the real conversation that produced this
+  // draft, reconstructed from run_events (see transcriptFromEvents in
+  // page.tsx). Undefined on the requester's own live card, since they
+  // already watched it happen turn by turn.
+  transcript?: TranscriptEntry[];
 };
 export type FinalConfirmationCard = { type: "final_confirmation"; status: "finalized" | "rejected"; draft: Record<string, any>; reason?: string | null };
 export type TextCard = { type: "text"; content: string };
