@@ -22,8 +22,7 @@ interface ApproverDetailProps {
 export function ApproverDetail(props: ApproverDetailProps) {
   const { card, runId, onDecision, busy } = props;
 
-  const [rejecting, setRejecting] = useState(false);
-  const [reason, setReason] = useState("");
+  const [note, setNote] = useState("");
 
   const draft = card.draft;
 
@@ -111,56 +110,46 @@ export function ApproverDetail(props: ApproverDetailProps) {
         </div>
 
         <div className="mt-auto flex flex-col gap-3.5">
-          {rejecting ? (
-            <div className="flex flex-col gap-3 px-5 py-[18px] rounded-2xl bg-app">
-              <p className="text-[13.5px] font-semibold text-ink">Tell {draft.requester ?? "the requester"} what to change</p>
-              <textarea
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="e.g. Needs an itemised receipt before this can be approved"
-                className="min-h-16 resize-none border border-control rounded-xl px-[13px] py-[11px] text-sm leading-[1.5] text-ink bg-panel outline-none"
-              />
-              <div className="flex gap-2.5">
-                <button
-                  onClick={() => onDecision(false, reason.trim() || "Needs revision")}
-                  disabled={busy}
-                  className="h-11 px-5 rounded-xl bg-warning-strong text-white text-sm font-semibold hover:bg-[#763C25] disabled:opacity-50 transition-colors"
-                >
-                  Send it back
-                </button>
-                <button
-                  onClick={() => { setRejecting(false); setReason(""); }}
-                  className="h-11 px-[18px] rounded-xl bg-panel border border-control text-ink-muted text-sm hover:bg-app transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center gap-2 text-[13px] text-text-tertiary">
-                <Icon name="bolt" size={17} />
-                Approving finalizes this request immediately.
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => onDecision(true)}
-                  disabled={busy}
-                  className="flex-1 h-[54px] rounded-2xl bg-accent text-white text-base font-semibold flex items-center justify-center gap-2 shadow-teal-cta hover:bg-accent-dark disabled:opacity-50 transition-colors"
-                >
-                  <Icon name="check" size={21} />
-                  Approve request
-                </button>
-                <button
-                  onClick={() => setRejecting(true)}
-                  disabled={busy}
-                  className="w-[168px] h-[54px] rounded-2xl bg-panel border border-control text-[#33302C] text-base font-medium hover:bg-app disabled:opacity-50 transition-colors"
-                >
-                  Reject
-                </button>
-              </div>
-            </>
-          )}
+          <div className="flex items-center gap-2 text-[13px] text-text-tertiary">
+            <Icon name="bolt" size={17} />
+            Approving finalizes this request immediately.
+          </div>
+          <button
+            onClick={() => onDecision(true)}
+            disabled={busy}
+            className="h-[54px] rounded-2xl bg-accent text-white text-base font-semibold flex items-center justify-center gap-2 shadow-teal-cta hover:bg-accent-dark disabled:opacity-50 transition-colors"
+          >
+            <Icon name="check" size={21} />
+            Approve request
+          </button>
+
+          {/* The real message channel to the requester: there's no
+              free-form decider->requester chat in the backend
+              (ws_runs.py's "message" action requires _owner_or_admin, so
+              only the requester can use it) -- a decider's only path to
+              send text back is the reject `reason` field. This composer is
+              that field, kept persistently visible instead of hidden
+              behind an extra "Reject" click, so each role has a real chat
+              area rather than a bare pair of buttons. */}
+          <div className="flex items-center gap-2 border border-control rounded-2xl bg-panel px-[14px] py-[10px]">
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !busy) onDecision(false, note.trim() || "Needs revision");
+              }}
+              placeholder={`Send back with a note for ${draft.requester ?? "the requester"}...`}
+              className="flex-1 min-w-0 text-sm text-ink bg-transparent outline-none placeholder:text-text-tertiary"
+            />
+            <button
+              onClick={() => onDecision(false, note.trim() || "Needs revision")}
+              disabled={busy}
+              title="Send back"
+              className="shrink-0 w-9 h-9 rounded-xl bg-warning-strong text-white flex items-center justify-center hover:bg-[#763C25] disabled:opacity-50 transition-colors"
+            >
+              <Icon name="undo" size={17} />
+            </button>
+          </div>
         </div>
       </div>
     </div>
