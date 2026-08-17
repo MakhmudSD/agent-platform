@@ -20,6 +20,7 @@ from app.orchestrator import graph as graph_module
 from app.orchestrator.nodes import MANAGER_SYSTEM_PROMPT, RELEVANCE_SYSTEM_PROMPT
 from app.orchestrator.vertical_employee_request import (
     DRAFT_SYSTEM_PROMPT, GATHER_SYSTEM_PROMPT,
+    ESCALATION_SYSTEM_PROMPT, APPROVAL_SUMMARY_SYSTEM_PROMPT,
 )
 from app.services.retrieval import PolicyMatch
 
@@ -87,7 +88,14 @@ def build_structured_call_mock(manager_decide, relevance_sequence, gather_sequen
             relevant = next(relevance_iter)
             return {"relevant": relevant, "refined_query": "" if relevant else "refined query, try again"}
         if system_prompt == DRAFT_SYSTEM_PROMPT:
-            return {"final_draft": dict(COMPLETE_DRAFT), "policy_notes": "Travel & Conference Expense Policy applies."}
+            return {"final_draft": dict(COMPLETE_DRAFT), "policy_notes": "Travel & Conference Expense Policy applies.",
+                    "policy_evaluation": []}
+        if system_prompt == ESCALATION_SYSTEM_PROMPT:
+            return {"routed_to": "approver", "reviewer_category": None,
+                    "reason": "Within standard conference spend threshold.",
+                    "confidence": "high", "triggered_rule": None}
+        if system_prompt == APPROVAL_SUMMARY_SYSTEM_PROMPT:
+            return {"summary": "Requesting $2,400 for an industry conference; clears policy cleanly."}
         raise AssertionError(f"Unexpected system_prompt (first 60 chars): {system_prompt[:60]!r}")
 
     return _mock
@@ -159,7 +167,8 @@ def test_happy_path() -> bool:
         expected_baseline = [
             "run_started", "draft_updated", "clarifying_question_asked",
             "user_message", "draft_updated", "state_transition", "policy_retrieved",
-            "state_transition", "draft_finalized_for_review", "state_transition",
+            "state_transition", "draft_finalized_for_review", "policy_evaluated",
+            "routing_decided", "approval_summary_generated", "state_transition",
             "approval_requested", "approved", "finalized",
         ]
         print(f"  non-manager_decision subsequence matches pre-rebuild baseline (+ restored user_message): {non_manager_events == expected_baseline}")
@@ -167,7 +176,11 @@ def test_happy_path() -> bool:
 
         manager_decisions = [e for e in events if e.event_type == "manager_decision"]
         print(f"  manager_decision events logged: {len(manager_decisions)}")
-        ok &= len(manager_decisions) == 4
+        # 3, not 4: the manager is no longer consulted once the draft is
+        # complete and policy is relevant -- draft -> escalation_routing ->
+        # approval_summary -> interrupt_for_approval is now a fixed pipeline,
+        # so the old 4th "decide to interrupt_for_approval" call never happens.
+        ok &= len(manager_decisions) == 3
         ok &= all(md.payload.get("reasoning") for md in manager_decisions)
 
         cleanup(db, run.id)
