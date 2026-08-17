@@ -169,6 +169,25 @@ async def runs_ws(ws: WebSocket) -> None:
                     card = await _run_watched(ws, run_id, graph.handle_message, db, run, body["message"])
                     await ws.send_json({"type": "result", "run_id": run.id, "status": run.status, "card": card.model_dump()})
 
+                elif action == "field_patch":
+                    # A requester overwriting or pre-filling one field on
+                    # their own in-progress draft (see AgentVisuals.tsx's
+                    # editable field chips) -- same ownership rule as
+                    # "message" since it's still their draft being edited,
+                    # just a structured value instead of free text.
+                    run_id = body["run_id"]
+                    run = db.get(Run, run_id)
+                    if run is None:
+                        await ws.send_json({"type": "error", "detail": "Run not found"})
+                        continue
+                    if not _owner_or_admin(run, user):
+                        await ws.send_json({"type": "error", "detail": "Not your request"})
+                        continue
+                    card = await _run_watched(
+                        ws, run_id, graph.handle_field_patch, db, run, body["field"], body["value"],
+                    )
+                    await ws.send_json({"type": "result", "run_id": run.id, "status": run.status, "card": card.model_dump()})
+
                 elif action == "approval":
                     if user.role.value not in ("approver", "reviewer", "admin"):
                         await ws.send_json({"type": "error", "detail": "Requires role: approver, reviewer, or admin"})

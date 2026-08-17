@@ -124,6 +124,30 @@ def route_from_manager(state: OrchestratorState) -> str:
 # intake (work) + await_message (interrupt-only)
 # ---------------------------------------------------------------------------
 
+_FIELD_PATCH_PREFIX = "__field_patch__:"
+
+
+def _valid_field_patch(raw: str) -> dict | None:
+    """A structured inline edit from the requester's form (see
+    ws_runs.py's "field_patch" action), encoded as a sentinel-prefixed JSON
+    string so it travels through the same `messages` list a real chat
+    reply uses -- no separate state channel, no schema change to
+    OrchestratorState. Returns None for anything that isn't a genuine
+    patch (including a user who happens to type this prefix by hand --
+    only ws_runs.py's field_patch handler ever constructs one server-side,
+    but this still validates rather than trusting the string blindly)."""
+    if not raw.startswith(_FIELD_PATCH_PREFIX):
+        return None
+    try:
+        payload = json.loads(raw[len(_FIELD_PATCH_PREFIX):])
+    except (ValueError, TypeError):
+        return None
+    field = payload.get("field")
+    if field not in REQUIRED_FIELDS or "value" not in payload:
+        return None
+    return {"field": field, "value": payload["value"]}
+
+
 @traced_node("intake")
 def intake_node(state: OrchestratorState, config: RunnableConfig) -> dict:
     db: Session = config["configurable"]["db"]
@@ -133,6 +157,27 @@ def intake_node(state: OrchestratorState, config: RunnableConfig) -> dict:
     # resume) has role "user" — there's no assistant/system role in this
     # graph's messages list, so the last entry is always the latest one.
     latest_message = state["messages"][-1]["content"] if state["messages"] else ""
+
+    # A direct field edit (the requester overwrote a proposed value, or
+    # typed one in before the agent asked) skips the LLM call entirely --
+    # there's no intent to parse, just a field/value pair to write. This
+    # keeps "accept the AI's proposal" and "type your own value" the same
+    # mechanical cost: neither burns a Gemini call for something regex/dict
+    # logic already knows. Readiness is recomputed the same way the model
+    # would judge it (all REQUIRED_FIELDS present and non-empty) rather
+    # than asking the LLM to re-confirm arithmetic it didn't need to see.
+    field_patch = _valid_field_patch(latest_message)
+    if field_patch is not None:
+        draft = {**state["draft"], field_patch["field"]: field_patch["value"]}
+        run.draft = draft
+        log_event(db, run, "draft_updated", {"draft": draft, "source": "user_edit"})
+        if all(draft.get(f) not in (None, "") for f in REQUIRED_FIELDS):
+            run.status = RunStatus.RETRIEVING
+            log_event(db, run, "state_transition", {"to": RunStatus.RETRIEVING.value})
+            return {"draft": draft, "status": RunStatus.RETRIEVING.value}
+        question = f"Got it — {field_patch['field'].replace('_', ' ')} is set. What else is missing?"
+        log_event(db, run, "clarifying_question_asked", {"question": question})
+        return {"draft": draft, "pending_question": question}
 
     result = structured_call(
         GATHER_SYSTEM_PROMPT,

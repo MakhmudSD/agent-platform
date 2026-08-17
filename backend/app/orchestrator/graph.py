@@ -22,6 +22,7 @@ Two persistence layers, deliberately not merged:
 """
 from __future__ import annotations
 
+import json
 from typing import Callable
 
 from langgraph.checkpoint.postgres import PostgresSaver
@@ -41,9 +42,9 @@ from app.orchestrator.cards import (
 )
 from app.orchestrator.graph_state import OrchestratorState
 from app.orchestrator.nodes import (
-    apply_approval_node, approval_summary_node, await_message_node, draft_node,
-    escalation_routing_node, intake_node, interrupt_for_approval_node, manager_node,
-    policy_research_node, route_after_intake, route_from_manager,
+    _FIELD_PATCH_PREFIX, apply_approval_node, approval_summary_node, await_message_node,
+    draft_node, escalation_routing_node, intake_node, interrupt_for_approval_node,
+    manager_node, policy_research_node, route_after_intake, route_from_manager,
 )
 
 # FastAPI dispatches sync route handlers to its threadpool, so concurrent
@@ -184,6 +185,18 @@ def handle_message(db: Session, run: Run, message: str) -> Card:
     if run.status != RunStatus.GATHERING:
         raise ValueError(f"Run {run.id} is not awaiting a message (status={run.status})")
     return _run_and_translate(db, run, Command(resume=message))
+
+
+def handle_field_patch(db: Session, run: Run, field: str, value) -> Card:
+    """Same resume path as handle_message -- the graph is still the only
+    writer of run.draft -- but the resume value is a sentinel-prefixed JSON
+    string intake_node recognizes and handles without an LLM call (see
+    nodes.py's _valid_field_patch). This is what a requester editing a
+    proposed form field inline actually sends, instead of free chat text."""
+    if run.status != RunStatus.GATHERING:
+        raise ValueError(f"Run {run.id} is not accepting field edits (status={run.status})")
+    resume_value = _FIELD_PATCH_PREFIX + json.dumps({"field": field, "value": value})
+    return _run_and_translate(db, run, Command(resume=resume_value))
 
 
 def handle_approval_response(

@@ -19,6 +19,7 @@ export type RunAction =
   // session cookie now (routes/ws_runs.py), never from client input.
   | { action: "start"; message: string }
   | { action: "message"; run_id: string; message: string }
+  | { action: "field_patch"; run_id: string; field: string; value: unknown }
   | { action: "approval"; run_id: string; approved: boolean; reason?: string };
 
 // One long-lived connection for the whole tab, matching the backend's

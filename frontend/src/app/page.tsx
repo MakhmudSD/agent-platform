@@ -12,6 +12,7 @@ import { ApproverDetail } from "@/components/ApproverDetail";
 import {
   ApprovalSummaryVisual, PolicyCheckVisual, RoutingDecisionVisual, RoutingVisual,
 } from "@/components/AgentVisuals";
+import { EditableDraftFields } from "@/components/EditableDraftFields";
 import { Icon } from "@/components/Icon";
 import { useAuth } from "@/lib/auth";
 
@@ -26,7 +27,8 @@ type Turn =
   | { from: "agent"; visual: "routing"; policyChecked: boolean; routedTo?: "approver" | "reviewer" }
   | { from: "agent"; visual: "policy_check"; citations: PolicyCitationCard[]; evaluation: PolicyRuleCard[] }
   | { from: "agent"; visual: "routing_decision"; decision: RoutingDecision }
-  | { from: "agent"; visual: "approval_summary"; summary: string };
+  | { from: "agent"; visual: "approval_summary"; summary: string }
+  | { from: "agent"; visual: "draft_fields"; draft: Record<string, any> };
 
 // Reconstructs the real conversation that produced a draft, for the
 // Approver/Reviewer's evidence column -- per design_handoff_approval_flow's
@@ -85,6 +87,11 @@ export default function Home() {
   // event it's keyed off (clarifying_question_asked) can fire once per
   // missing field, but "here's where this goes next" is only news once.
   const routingShownRef = useRef(false);
+  // Client-only UI state for the editable draft-field chips (see
+  // EditableDraftFields) -- which fields the requester has explicitly
+  // accepted or edited, not a readiness gate (the backend's required-
+  // fields check doesn't care about this at all).
+  const [confirmedFields, setConfirmedFields] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!authLoading && !user) router.push("/login");
@@ -137,6 +144,20 @@ export default function Home() {
     });
   }
 
+  // Same in-place-update pattern as the other inline visuals -- one
+  // editable-fields card per run, its contents replaced as the draft
+  // grows, rather than a new card stacking up on every draft_updated
+  // event.
+  function upsertDraftFieldsTurn(draft: Record<string, any>) {
+    setTurns((t) => {
+      const idx = t.findIndex((turn) => "visual" in turn && turn.visual === "draft_fields");
+      if (idx === -1) return [...t, { from: "agent", visual: "draft_fields", draft }];
+      const next = [...t];
+      next[idx] = { from: "agent", visual: "draft_fields", draft };
+      return next;
+    });
+  }
+
   function handleEvent(event: LiveEvent) {
     switch (event.type) {
       case "node_started":
@@ -151,6 +172,9 @@ export default function Home() {
         setAuditLog((log) => [...log, { event_type: event.event_type, payload: event.payload, ts: Date.now() }]);
         if ((event.event_type === "draft_updated" || event.event_type === "draft_finalized_for_review") && event.payload.draft) {
           setLiveDraft(event.payload.draft);
+        }
+        if (event.event_type === "draft_updated" && event.payload.draft) {
+          upsertDraftFieldsTurn(event.payload.draft);
         }
         if (event.event_type === "clarifying_question_asked" && !routingShownRef.current) {
           routingShownRef.current = true;
@@ -211,9 +235,24 @@ export default function Home() {
       socketRef.current.send({ action: "message", run_id: runId, message });
     } else {
       routingShownRef.current = false;
+      setConfirmedFields(new Set());
       setStartedAt(Date.now());
       socketRef.current.send({ action: "start", message });
     }
+  }
+
+  // Accept and Edit both resolve here -- same WS action, same graph path
+  // (ws_runs.py's "field_patch" -> graph.handle_field_patch), no LLM call
+  // on the backend. Optimistically marks the field confirmed immediately
+  // rather than waiting for the round-trip: there's nothing to roll back
+  // to if it fails (the value was already real, just unconfirmed), so the
+  // only failure mode worth surfacing is wsError, not reverting the chip.
+  function handleFieldPatch(field: string, value: string) {
+    if (isDecider || !runId || busy || !socketRef.current) return;
+    setWsError(null);
+    setConfirmedFields((f) => new Set(f).add(field));
+    setBusy(true);
+    socketRef.current.send({ action: "field_patch", run_id: runId, field, value });
   }
 
   // Fixes a real gap: without this, an Approver could only ever act on
@@ -395,6 +434,23 @@ export default function Home() {
                       <div className="max-w-full animate-cardin">
                         <ApprovalSummaryVisual summary={turn.summary} />
                       </div>
+                    ) : "visual" in turn && turn.visual === "draft_fields" ? (
+                      // Only editable while GATHERING -- that's the only
+                      // status handle_field_patch accepts (nodes.py's
+                      // intake_node is the only node that writes draft
+                      // fields directly). Past that, the fields are
+                      // already locked into the draft the rest of the
+                      // flow reads from.
+                      status === "gathering" && (
+                        <div className="max-w-full animate-cardin">
+                          <EditableDraftFields
+                            draft={turn.draft}
+                            confirmedFields={confirmedFields}
+                            busy={busy}
+                            onPatch={handleFieldPatch}
+                          />
+                        </div>
+                      )
                     ) : (
                       <div className="max-w-full">
                         <CardRenderer card={turn.card!} />
