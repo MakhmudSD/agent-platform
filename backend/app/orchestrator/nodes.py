@@ -209,6 +209,17 @@ def policy_research_node(state: OrchestratorState, config: RunnableConfig) -> di
 # draft
 # ---------------------------------------------------------------------------
 
+_EXCERPT_LIMIT = 280
+
+
+def _excerpt(text: str) -> str:
+    # A bare [:280] slice cuts off mid-word with no indicator it was
+    # truncated -- reads as broken text, not an intentional preview.
+    if len(text) <= _EXCERPT_LIMIT:
+        return text
+    return text[:_EXCERPT_LIMIT].rstrip() + "..."
+
+
 @traced_node("draft")
 def draft_node(state: OrchestratorState, config: RunnableConfig) -> dict:
     db: Session = config["configurable"]["db"]
@@ -232,9 +243,14 @@ def draft_node(state: OrchestratorState, config: RunnableConfig) -> dict:
         "draft": final_draft, "policy_notes": result.get("policy_notes", ""),
     })
 
+    citations = [
+        {"title": p["title"], "excerpt": _excerpt(p["text"])}
+        for p in state["retrieved_policies"]
+    ]
+
     run.status = RunStatus.AWAITING_APPROVAL
     log_event(db, run, "state_transition", {"to": RunStatus.AWAITING_APPROVAL.value})
-    log_event(db, run, "approval_requested", {"draft": final_draft})
+    log_event(db, run, "approval_requested", {"draft": final_draft, "policy_citations": citations})
     notify(
         db, run,
         f"Awaiting approval: {run.requester_name}'s request "
@@ -247,17 +263,6 @@ def draft_node(state: OrchestratorState, config: RunnableConfig) -> dict:
 # ---------------------------------------------------------------------------
 # interrupt_for_approval (interrupt-only) + apply_approval (work)
 # ---------------------------------------------------------------------------
-
-_EXCERPT_LIMIT = 280
-
-
-def _excerpt(text: str) -> str:
-    # A bare [:280] slice cuts off mid-word with no indicator it was
-    # truncated -- reads as broken text, not an intentional preview.
-    if len(text) <= _EXCERPT_LIMIT:
-        return text
-    return text[:_EXCERPT_LIMIT].rstrip() + "..."
-
 
 @traced_node("interrupt_for_approval")
 def interrupt_for_approval_node(state: OrchestratorState, config: RunnableConfig) -> dict:

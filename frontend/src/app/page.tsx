@@ -116,11 +116,10 @@ export default function Home() {
   // Fixes a real gap: without this, an Approver could only ever act on
   // whichever run happened to already be loaded in this tab (e.g. one this
   // tab itself started as Requester) -- the sidebar's pending-approval
-  // queue had no way to load a *different* run in. Reconstructs a minimal
-  // approval_request card from GET /runs/{id} since that endpoint doesn't
-  // return policy_citations (only the live interrupt payload does) --
-  // approving/rejecting still works correctly, the citations just won't
-  // re-render for a run picked up this way.
+  // queue had no way to load a *different* run in. Reconstructs the
+  // approval_request card from GET /runs/{id}'s event log -- the
+  // "approval_requested" event carries the same policy_citations the live
+  // interrupt payload had, so the evidence view is identical either way.
   async function handleSelectPendingRun(selectedRunId: string) {
     if (busy) return;
     setWsError(null);
@@ -135,9 +134,11 @@ export default function Home() {
       setWsError("This request is no longer awaiting approval.");
       return;
     }
+    const approvalEvent = [...run.events].reverse().find((e) => e.type === "approval_requested");
+    const policyCitations = approvalEvent?.payload?.policy_citations ?? [];
     setRunId(run.run_id);
     setStatus(run.status);
-    setTurns([{ from: "agent", card: { type: "approval_request", draft: run.draft, policy_citations: [] } }]);
+    setTurns([{ from: "agent", card: { type: "approval_request", draft: run.draft, policy_citations: policyCitations } }]);
     setLiveDraft(run.draft);
     setAuditLog([]);
     setStreamText("");
