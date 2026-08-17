@@ -127,11 +127,16 @@ export function PolicyCheckVisual({
   citations: PolicyCitationCard[];
 }) {
   if (evaluation.length > 0) {
+    // "Clear" = resolved (passed or binding-but-satisfied), matching the
+    // reference's "3 of 4 clear" -- only "outstanding" rules count against
+    // it. Previously this always read N of N regardless of outcome, which
+    // told an approver everything passed even when a rule was unresolved.
+    const clearCount = evaluation.filter((r) => r.status !== "outstanding").length;
     return (
       <div className={CARD}>
         <div className={HEADER}>
           <span className={TITLE}>Company policy</span>
-          <span className={META}>{evaluation.length} of {evaluation.length} clear</span>
+          <span className={META}>{clearCount} of {evaluation.length} clear</span>
         </div>
         <div className="space-y-2.5">
           {evaluation.map((rule, i) => <PolicyRuleRow key={i} rule={rule} />)}

@@ -93,6 +93,16 @@ def manager_node(state: OrchestratorState, config: RunnableConfig) -> dict:
     next_node = result.get("next", "intake")
     reasoning = result.get("reasoning", "")
 
+    # The manager's conditional-edge map only has 3 destinations now that
+    # escalation/summary/interrupt is a fixed post-draft pipeline (see
+    # graph.py). "interrupt_for_approval" and "done" were valid tokens for
+    # this same call until that change, so a model slip back onto one of
+    # them would otherwise hit a missing conditional-edge key and crash the
+    # run instead of degrading gracefully.
+    if next_node not in ("intake", "policy_research", "draft"):
+        reasoning = f"{reasoning} (model returned unrecognized target {next_node!r}, defaulting to intake.)"
+        next_node = "intake"
+
     # Deterministic safety net — never trust the LLM alone for a hard cap.
     # This is what verification item 3 (retry cap) is actually checking.
     if next_node == "policy_research" and state["retrieval_attempts"] >= 2:

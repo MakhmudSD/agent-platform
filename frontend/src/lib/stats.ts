@@ -13,6 +13,16 @@ type RunLike = {
   draft: Record<string, any> | null;
 };
 
+// What a request "is" for list purposes -- category + amount if the agent's
+// gathered that far, otherwise null (caller shows a placeholder). Was
+// defined identically in both Sidebar.tsx and history/page.tsx; a future
+// tweak to this shape would otherwise have to be made in two places.
+export function summarize(draft: Record<string, any> | null): string | null {
+  if (!draft?.category) return null;
+  const amount = draft.amount != null ? ` · $${draft.amount}` : "";
+  return `${draft.category}${amount}`;
+}
+
 function formatDurationHours(hours: number): string {
   if (hours < 1) return `${Math.max(1, Math.round(hours * 60))}m`;
   if (hours < 20) return `${Math.round(hours)}h`;

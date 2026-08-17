@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api, Notification } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { summarize } from "@/lib/stats";
 import { Logo } from "@/components/Logo";
 import { Icon } from "@/components/Icon";
 import { MiniProgress } from "@/components/MiniProgress";
@@ -16,16 +17,6 @@ type RunSummary = {
   created_at: string;
   draft: Record<string, any> | null;
 };
-
-// What a request "is" for list purposes -- category + amount if the agent's
-// gathered that far, otherwise a plain placeholder. Without this every row
-// in the list was indistinguishable ("Alice · gathering" repeated N times),
-// which read as a job queue rather than a list of actual requests.
-function summarize(draft: Record<string, any> | null): string | null {
-  if (!draft?.category) return null;
-  const amount = draft.amount != null ? ` · $${draft.amount}` : "";
-  return `${draft.category}${amount}`;
-}
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);

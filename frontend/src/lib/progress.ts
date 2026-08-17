@@ -29,6 +29,13 @@ export function isTerminalStatus(status: string | null | undefined): boolean {
 const NODE_TO_STAGE: Partial<Record<string, number>> = {
   policy_research: 1,
   draft: 2,
+  // Both run after draft, before status flips to awaiting_approval -- they
+  // advance toward stage 3, same as interrupt_for_approval. Missing these
+  // left the progress strip frozen on "drafting" while the live-node label
+  // above it correctly said "Deciding who should review this" / "Preparing
+  // the decision brief" -- a visible contradiction on screen.
+  escalation_routing: 3,
+  approval_summary: 3,
   interrupt_for_approval: 3,
   apply_approval: 4,
 };

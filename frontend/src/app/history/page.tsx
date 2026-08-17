@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { summarize } from "@/lib/stats";
 import { Sidebar } from "@/components/Sidebar";
 import { MiniProgress } from "@/components/MiniProgress";
 import { Icon } from "@/components/Icon";
@@ -50,12 +51,6 @@ const EVENT_ICONS: Record<string, string> = {
   rejected: "undo",
   finalized: "task_alt",
 };
-
-function summarize(draft: Record<string, any> | null): string | null {
-  if (!draft?.category) return null;
-  const amount = draft.amount != null ? ` · $${draft.amount}` : "";
-  return `${draft.category}${amount}`;
-}
 
 export default function History() {
   const router = useRouter();

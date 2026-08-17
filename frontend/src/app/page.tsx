@@ -23,7 +23,7 @@ import { useAuth } from "@/lib/auth";
 // it fires, and the Approval-Summary Agent's brief right after.
 type Turn =
   | { from: "user" | "agent"; card?: Card; text?: string }
-  | { from: "agent"; visual: "routing"; policyChecked: boolean }
+  | { from: "agent"; visual: "routing"; policyChecked: boolean; routedTo?: "approver" | "reviewer" }
   | { from: "agent"; visual: "policy_check"; citations: PolicyCitationCard[]; evaluation: PolicyRuleCard[] }
   | { from: "agent"; visual: "routing_decision"; decision: RoutingDecision }
   | { from: "agent"; visual: "approval_summary"; summary: string };
@@ -104,6 +104,22 @@ export default function Home() {
     });
   }
 
+  // Same in-place-update pattern as upsertPolicyCheckTurn -- without this
+  // the routing card was created once with policyChecked: false and never
+  // touched again, so it stayed stuck on "Policy checked" in-progress and
+  // "Approver decides" even after policy actually cleared and the run was
+  // routed to a Reviewer.
+  function upsertRoutingTurn(patch: { policyChecked?: boolean; routedTo?: "approver" | "reviewer" }) {
+    setTurns((t) => {
+      const idx = t.findIndex((turn) => "visual" in turn && turn.visual === "routing");
+      if (idx === -1) return t;
+      const existing = t[idx] as Extract<Turn, { visual: "routing" }>;
+      const next = [...t];
+      next[idx] = { ...existing, ...patch };
+      return next;
+    });
+  }
+
   function handleEvent(event: LiveEvent) {
     switch (event.type) {
       case "node_started":
@@ -128,6 +144,7 @@ export default function Home() {
             type: "policy_citation", title: m.title, excerpt: m.excerpt,
           }));
           upsertPolicyCheckTurn({ citations, evaluation: [] });
+          upsertRoutingTurn({ policyChecked: true });
         }
         // Fires once draft_node's rule evaluation lands -- upgrades the
         // same inline card from "which documents matched" to the real
@@ -141,6 +158,7 @@ export default function Home() {
         }
         if (event.event_type === "routing_decided" && event.payload.routing_decision) {
           setTurns((t) => [...t, { from: "agent", visual: "routing_decision", decision: event.payload.routing_decision }]);
+          upsertRoutingTurn({ routedTo: event.payload.routing_decision.routed_to });
         }
         if (event.event_type === "approval_summary_generated" && event.payload.approval_summary) {
           setTurns((t) => [...t, { from: "agent", visual: "approval_summary", summary: event.payload.approval_summary }]);
@@ -334,7 +352,7 @@ export default function Home() {
                       </div>
                     ) : "visual" in turn && turn.visual === "routing" ? (
                       <div className="max-w-full animate-cardin">
-                        <RoutingVisual policyChecked={turn.policyChecked} />
+                        <RoutingVisual policyChecked={turn.policyChecked} routedTo={turn.routedTo} />
                       </div>
                     ) : "visual" in turn && turn.visual === "policy_check" ? (
                       <div className="max-w-full animate-cardin">
