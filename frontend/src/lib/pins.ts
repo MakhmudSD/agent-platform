@@ -1,9 +1,7 @@
 // Per-user pinned-run ids, kept in localStorage -- a personal "fast
 // access to a few requests" list, not shared data other users or devices
 // need to see, so it doesn't need a backend table. Same reasoning as
-// Sidebar.tsx's sidebar_expanded preference. Capped at 5 visible pins in
-// the UI (see Inbox), matching the PM consult's read that this scale
-// doesn't need more.
+// Sidebar.tsx's sidebar_expanded preference.
 function key(userId: string): string {
   return `pinned_runs_${userId}`;
 }
@@ -15,10 +13,6 @@ export function getPinnedIds(userId: string): string[] {
   } catch {
     return [];
   }
-}
-
-export function isPinned(userId: string, runId: string): boolean {
-  return getPinnedIds(userId).includes(runId);
 }
 
 export function togglePin(userId: string, runId: string): string[] {

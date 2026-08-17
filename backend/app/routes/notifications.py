@@ -52,3 +52,14 @@ def mark_read(notification_id: str, user: User = Depends(get_current_user), db: 
     notification.read = True
     db.commit()
     return {"id": notification.id, "read": notification.read}
+
+
+@router.post("/read-all")
+def mark_all_read(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    query = db.query(Notification).filter(Notification.read.is_(False))
+    condition = _visible_to(user)
+    if condition is not None:
+        query = query.filter(condition)
+    count = query.update({Notification.read: True}, synchronize_session=False)
+    db.commit()
+    return {"marked": count}

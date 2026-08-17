@@ -1,12 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
 from app.core.tracing import instrument_app
 from app.routes.admin import router as admin_router
 from app.routes.auth import router as auth_router
+from app.routes.folders import router as folders_router
 from app.routes.notifications import router as notifications_router
-from app.routes.runs import router as runs_router
+from app.routes.runs import UPLOAD_ROOT, router as runs_router
 from app.routes.ws_runs import router as ws_runs_router
 
 app = FastAPI(title="Agent Platform — Employee Request Assistant")
@@ -25,8 +27,13 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(runs_router)
+app.include_router(folders_router)
 app.include_router(notifications_router)
 app.include_router(ws_runs_router)
+
+UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_ROOT)), name="uploads")
+
 instrument_app(app)
 
 

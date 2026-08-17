@@ -1,12 +1,24 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
-import { api, Notification } from "@/lib/api";
+import { usePathname, useRouter } from "next/navigation";
+import { api, Folder, Notification } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { isTypeEnabled } from "@/lib/notificationPrefs";
+import { getPinnedIds, togglePin } from "@/lib/pins";
+import { summarize } from "@/lib/stats";
 import { Logo } from "@/components/Logo";
 import { Icon } from "@/components/Icon";
+import { ConvoRowMenu } from "@/components/ConvoRowMenu";
+
+type RunListItem = {
+  run_id: string;
+  status: string;
+  user_id: string | null;
+  draft: Record<string, any> | null;
+  archived?: boolean;
+  folder_id?: string | null;
+};
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -29,9 +41,42 @@ const EXPANDED_KEY = "sidebar_expanded";
 // server data, so it doesn't belong in the backend.
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { user, logout } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [expanded, setExpanded] = useState(false);
+  const [recentRuns, setRecentRuns] = useState<RunListItem[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [pinnedIds, setPinnedIds] = useState<string[]>([]);
+
+  const isDecider = user?.role === "approver" || user?.role === "reviewer" || user?.role === "admin";
+  const onChat = pathname === "/chat";
+
+  function refetchRuns() {
+    if (!user) return;
+    api.listRuns().then((runs: RunListItem[]) => setRecentRuns(runs.filter((r) => r.user_id === user.id))).catch(() => {});
+  }
+
+  // Visible whenever the rail is expanded, not just on /chat -- once a
+  // request hands off to "/" (an active conversation), the point of
+  // keeping history one click away is exactly when it would otherwise
+  // disappear. Fetches once per expand rather than on every route change.
+  useEffect(() => {
+    if (!user || isDecider || !expanded) return;
+    refetchRuns();
+    api.listFolders().then(setFolders).catch(() => {});
+    setPinnedIds(getPinnedIds(user.id));
+  }, [user, isDecider, expanded]);
+
+  const visibleRuns = recentRuns.filter((r) => !r.archived);
+  const pinnedRuns = visibleRuns.filter((r) => pinnedIds.includes(r.run_id));
+  const unpinnedRuns = visibleRuns.filter((r) => !pinnedIds.includes(r.run_id));
+
+  async function handleCreateFolder(name: string): Promise<string> {
+    const folder = await api.createFolder(name);
+    setFolders((fs) => [...fs, folder]);
+    return folder.id;
+  }
 
   useEffect(() => {
     setExpanded(localStorage.getItem(EXPANDED_KEY) === "true");
@@ -48,7 +93,13 @@ export function Sidebar() {
 
   useEffect(() => {
     if (!user) return;
-    api.listNotifications().then(setNotifications).catch(() => {});
+    const refetch = () => api.listNotifications().then(setNotifications).catch(() => {});
+    refetch();
+    // Same-page mark-read/mark-all-read (see lib/api.ts) fires this so the
+    // badge updates immediately instead of only on the next navigation,
+    // when this component happens to remount and refetch fresh anyway.
+    window.addEventListener("notifications:changed", refetch);
+    return () => window.removeEventListener("notifications:changed", refetch);
   }, [user]);
 
   // GET /notifications now filters server-side by real user_id/target_role
@@ -64,25 +115,90 @@ export function Sidebar() {
         expanded ? "w-[204px] items-stretch px-3" : "w-[68px] items-center"
       }`}
     >
-      <div className={`flex items-center mb-4 ${expanded ? "justify-between px-1" : "flex-col gap-2"}`}>
-        <a href="/">
-          <Logo size={32} />
-        </a>
+      {/* Collapsed: the logo alone doubles as the expand toggle -- home
+          navigation still exists via the Chat rail icon right below, so
+          nothing is lost, and this avoids the two-row "logo, then a
+          separate chevron stacked under it" layout that read as a stray
+          icon floating below the brand mark. Expanded: logo + app name is
+          the real home link (back to a clickable brand mark instead of a
+          bare icon), chevron sits on the same line to collapse back --
+          there's room here, unlike the 68px collapsed rail. */}
+      {expanded ? (
+        <div className="flex items-center justify-between mb-4 px-1">
+          <a href="/" className="flex items-center gap-2 min-w-0">
+            <Logo size={28} />
+            <span className="text-[13.5px] font-semibold text-ink truncate">Request Assistant</span>
+          </a>
+          <button
+            onClick={toggleExpanded}
+            title="Collapse sidebar"
+            aria-label="Collapse sidebar"
+            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-text-tertiary hover:bg-neutral-fill/50 hover:text-ink-muted transition-colors"
+          >
+            <Icon name="chevron_left" size={16} filled={false} />
+          </button>
+        </div>
+      ) : (
         <button
           onClick={toggleExpanded}
-          title={expanded ? "Collapse sidebar" : "Expand sidebar"}
-          aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
-          className="w-7 h-7 flex items-center justify-center rounded-lg text-text-tertiary hover:bg-neutral-fill/50 hover:text-ink-muted transition-colors"
+          title="Expand sidebar"
+          aria-label="Expand sidebar"
+          className="flex justify-center mb-4"
         >
-          <Icon name={expanded ? "chevron_left" : "chevron_right"} size={16} filled={false} />
+          <Logo size={32} />
         </button>
-      </div>
+      )}
 
       <div className={`flex flex-col gap-1 ${expanded ? "" : "items-center gap-2"}`}>
-        <RailButton iconName="forum" label="Requests" href="/" active={pathname === "/"} expanded={expanded} />
-        <RailButton iconName="inbox" label="Inbox" href="/inbox" active={pathname === "/inbox"} badge={unreadCount} expanded={expanded} />
-        <RailButton iconName="history" label="Audit trail" href="/history" active={pathname === "/history"} expanded={expanded} />
+        <RailButton iconName="forum" label="Chat" href="/chat" active={onChat} expanded={expanded} />
+        <RailButton iconName="folder" label="Folders" href="/folders" active={pathname === "/folders"} expanded={expanded} />
+        <RailButton iconName="notifications" label="Notifications" href="/notifications" active={pathname === "/notifications"} badge={unreadCount} expanded={expanded} />
       </div>
+
+      {expanded && !isDecider && visibleRuns.length > 0 && (
+        <div className="mt-4 flex-1 min-h-0 overflow-y-auto">
+          {pinnedRuns.length > 0 && (
+            <>
+              <p className="px-1 mb-1.5 text-[10.5px] font-medium text-text-quaternary uppercase tracking-wide">Pinned</p>
+              <div className="flex flex-col gap-0.5 mb-3">
+                {pinnedRuns.map((r) => (
+                  <ConvoRow
+                    key={r.run_id}
+                    run={r}
+                    pinned
+                    folders={folders}
+                    onOpen={() => router.push(`/?run=${r.run_id}`)}
+                    onTogglePin={() => setPinnedIds(togglePin(user!.id, r.run_id))}
+                    onArchive={() => api.setRunArchived(r.run_id, true).then(refetchRuns)}
+                    onAssignFolder={(fid) => api.setRunFolder(r.run_id, fid).then(refetchRuns)}
+                    onCreateFolder={handleCreateFolder}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+          {unpinnedRuns.length > 0 && (
+            <>
+              <p className="px-1 mb-1.5 text-[10.5px] font-medium text-text-quaternary uppercase tracking-wide">Recent</p>
+              <div className="flex flex-col gap-0.5">
+                {unpinnedRuns.slice(0, 20).map((r) => (
+                  <ConvoRow
+                    key={r.run_id}
+                    run={r}
+                    pinned={false}
+                    folders={folders}
+                    onOpen={() => router.push(`/?run=${r.run_id}`)}
+                    onTogglePin={() => setPinnedIds(togglePin(user!.id, r.run_id))}
+                    onArchive={() => api.setRunArchived(r.run_id, true).then(refetchRuns)}
+                    onAssignFolder={(fid) => api.setRunFolder(r.run_id, fid).then(refetchRuns)}
+                    onCreateFolder={handleCreateFolder}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {user && (
         <div className={`mt-auto flex gap-2 ${expanded ? "flex-col" : "flex-col items-center"}`}>
@@ -121,6 +237,41 @@ export function Sidebar() {
   );
 }
 
+interface ConvoRowProps {
+  run: RunListItem;
+  pinned: boolean;
+  folders: Folder[];
+  onOpen: () => void;
+  onTogglePin: () => void;
+  onArchive: () => void;
+  onAssignFolder: (folderId: string | null) => void;
+  onCreateFolder: (name: string) => Promise<string>;
+}
+
+function ConvoRow(props: ConvoRowProps) {
+  const { run, pinned, folders, onOpen, onTogglePin, onArchive, onAssignFolder, onCreateFolder } = props;
+  return (
+    <div className="group flex items-center gap-0.5 rounded-lg hover:bg-neutral-fill/50 transition-colors">
+      <button
+        onClick={onOpen}
+        title={summarize(run.draft) ?? "New request"}
+        className="flex-1 min-w-0 text-left px-2.5 py-1.5 text-[12.5px] text-ink-2 truncate"
+      >
+        {summarize(run.draft) ?? "New request"}
+      </button>
+      <ConvoRowMenu
+        pinned={pinned}
+        folders={folders}
+        currentFolderId={run.folder_id ?? null}
+        onTogglePin={onTogglePin}
+        onArchive={onArchive}
+        onAssignFolder={onAssignFolder}
+        onCreateFolder={onCreateFolder}
+      />
+    </div>
+  );
+}
+
 interface RailButtonProps {
   iconName: string;
   label: string;
@@ -135,13 +286,19 @@ interface RailButtonProps {
 function RailButton(props: RailButtonProps) {
   const { iconName, label, active, disabled, onClick, href, badge, expanded } = props;
 
+  // Active state deliberately doesn't reuse the logo's solid-ink rounded
+  // square -- in the collapsed rail that tile sits directly under the
+  // actual Logo (same shape, nearly the same size), and the two together
+  // read as two stacked app icons instead of "logo + active nav item."
+  // The accent tint keeps the highlight legible while staying visually
+  // distinct from the brand mark above it.
   const classes = `relative flex items-center rounded-[14px] transition-colors ${
     expanded ? "gap-3 h-11 px-3" : "w-11 h-11 justify-center"
   } ${
     disabled
       ? "text-placeholder cursor-default"
       : active
-        ? "bg-ink text-white"
+        ? "bg-accent-tint text-accent"
         : "text-text-tertiary hover:bg-neutral-fill/50 hover:text-ink-muted"
   }`;
 

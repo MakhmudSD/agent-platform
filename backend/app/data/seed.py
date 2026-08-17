@@ -100,6 +100,22 @@ def _migrate_notification_columns() -> None:
         conn.commit()
 
 
+def _migrate_runs_folder_columns() -> None:
+    # Same additive pattern as the other _migrate_* functions -- archived
+    # and folder_id were added after runs already existed. folders itself
+    # is a brand-new table so create_all() handles it; this only patches
+    # the existing runs table. Existing rows get archived = false,
+    # folder_id = NULL -- nothing is hidden or filed by default.
+    with engine.connect() as conn:
+        conn.execute(sql_text(
+            "ALTER TABLE runs ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT false"
+        ))
+        conn.execute(sql_text(
+            "ALTER TABLE runs ADD COLUMN IF NOT EXISTS folder_id UUID REFERENCES folders(id) ON DELETE SET NULL"
+        ))
+        conn.commit()
+
+
 def _seed_demo_accounts(db) -> None:
     for account in DEMO_ACCOUNTS:
         if db.query(User).filter_by(email=account["email"]).first() is not None:
@@ -123,6 +139,7 @@ def main():
     _migrate_runs_user_id()  # alters `runs` (existing table) -- create_all can't do this
     _migrate_runs_routed_to()
     _migrate_notification_columns()
+    _migrate_runs_folder_columns()  # folders table itself comes from create_all() above
 
     db = SessionLocal()
     try:

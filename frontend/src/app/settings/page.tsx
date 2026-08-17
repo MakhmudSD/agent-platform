@@ -6,6 +6,7 @@ import { NotificationType } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { getDisabledTypes, setTypeEnabled } from "@/lib/notificationPrefs";
 import { Sidebar } from "@/components/Sidebar";
+import { NotificationBell } from "@/components/NotificationBell";
 
 const TYPE_LABELS: Record<NotificationType, { label: string; description: string }> = {
   needs_approval: { label: "Needs your approval", description: "A request was routed to the approver queue." },
@@ -60,16 +61,24 @@ export default function Settings() {
       <Sidebar />
 
       <div className="flex-1 flex flex-col h-screen min-w-0">
-        <div className="h-14 shrink-0 flex items-center px-[34px] border-b border-hairline">
+        <div className="h-14 shrink-0 flex items-center justify-between px-[34px] border-b border-hairline">
           <span className="text-[15px] font-semibold text-ink tracking-[-.01em]">Settings</span>
+          <NotificationBell />
         </div>
 
         <div className="flex-1 overflow-y-auto bg-surface px-9 py-8">
           <div className="max-w-xl mx-auto">
             <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Notifications</p>
-            <p className="mb-5 text-[13px] text-text-tertiary">
+            <p className="mb-2 text-[13px] text-text-tertiary">
               Choose what shows up in your inbox and unread badge. Every request still gets processed the same
               way regardless of what's toggled here -- this only controls what you're notified about.
+            </p>
+            <p className="mb-5 text-[13px] text-text-tertiary">
+              You're only shown the kinds of notifications your role can actually receive -- as{" "}
+              <span className="capitalize">{user.role}</span>, that's{" "}
+              {typesForRole(user.role).map((t) => TYPE_LABELS[t].label.toLowerCase()).join(" and ")}. The rest
+              can't happen for you (an approver never gets "your request was approved" about someone else's
+              request), so there's nothing to toggle for them.
             </p>
 
             <div className="rounded-2xl bg-card shadow-card divide-y divide-hairline-soft">

@@ -1,15 +1,25 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+import uuid
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.deps import can_decide, get_current_user, require_role
-from app.db.models import Run, User
+from app.db.models import Folder, Run, RunEvent, RunFeedback, User
 from app.db.session import get_db
 from app.orchestrator import graph
 
 router = APIRouter(prefix="/runs", tags=["runs"])
+
+# Local disk, not object storage -- matches this app's whole MVP posture
+# (see seed.py's own "move to Alembic before this gets a second
+# contributor" note). One directory per run keeps a run's attachments
+# grouped and trivially found from its id alone.
+UPLOAD_ROOT = Path(__file__).resolve().parent.parent / "data" / "uploads"
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
 
 class StartRunRequest(BaseModel):
@@ -23,6 +33,19 @@ class MessageRequest(BaseModel):
 class ApprovalRequest(BaseModel):
     approved: bool
     reason: str | None = None
+
+
+class FeedbackRequest(BaseModel):
+    rating: bool
+    note: str | None = None
+
+
+class ArchiveRequest(BaseModel):
+    archived: bool
+
+
+class FolderAssignRequest(BaseModel):
+    folder_id: str | None = None
 
 
 def _get_run_or_404(db: Session, run_id: str) -> Run:
@@ -68,6 +91,100 @@ def respond_to_approval(
     return {"run_id": run.id, "status": run.status, "card": card.model_dump()}
 
 
+@router.post("/{run_id}/feedback")
+def submit_feedback(run_id: str, body: FeedbackRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    run = _get_run_or_404(db, run_id)
+    # Anyone who was actually a participant in this conversation -- the
+    # requester who ran it, or a decider it was routed to -- can rate it.
+    # Not a general "rate anything" endpoint.
+    is_participant = (run.user_id is not None and run.user_id == user.id) or can_decide(run, user)
+    if not is_participant and user.role.value != "admin":
+        raise HTTPException(status_code=403, detail="Not a participant in this conversation")
+
+    existing = (
+        db.query(RunFeedback)
+        .filter(RunFeedback.run_id == run_id, RunFeedback.user_id == user.id)
+        .first()
+    )
+    if existing is not None:
+        existing.rating = body.rating
+        existing.note = body.note
+    else:
+        db.add(RunFeedback(run_id=run_id, user_id=user.id, rating=body.rating, note=body.note))
+    db.commit()
+    return {"run_id": run_id, "rating": body.rating}
+
+
+@router.get("/{run_id}/feedback")
+def get_feedback(run_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _get_run_or_404(db, run_id)
+    existing = (
+        db.query(RunFeedback)
+        .filter(RunFeedback.run_id == run_id, RunFeedback.user_id == user.id)
+        .first()
+    )
+    return {"rating": existing.rating if existing else None}
+
+
+@router.post("/{run_id}/attachments")
+async def upload_attachment(run_id: str, file: UploadFile, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    run = _get_run_or_404(db, run_id)
+    # Same participant check as feedback -- the requester who owns this
+    # conversation, or a decider it was routed to, can attach a file to it.
+    is_participant = (run.user_id is not None and run.user_id == user.id) or can_decide(run, user)
+    if not is_participant and user.role.value != "admin":
+        raise HTTPException(status_code=403, detail="Not a participant in this conversation")
+
+    contents = await file.read()
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File is too large (10MB max)")
+
+    run_dir = UPLOAD_ROOT / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    stored_name = f"{uuid.uuid4()}_{file.filename}"
+    (run_dir / stored_name).write_bytes(contents)
+    url = f"/uploads/{run_id}/{stored_name}"
+
+    # Logged as a real run_event, same append-only audit trail everything
+    # else in this run goes through -- not a side table only the composer
+    # knows about. This is what makes it show up for free in both the
+    # live WS stream (audit_event) and a later replay (GET /runs/{id}).
+    event = RunEvent(
+        run_id=run_id, event_type="attachment_uploaded",
+        payload={"filename": file.filename, "url": url, "size": len(contents), "uploaded_by": user.name},
+    )
+    db.add(event)
+    db.commit()
+    return {"filename": file.filename, "url": url, "size": len(contents)}
+
+
+@router.patch("/{run_id}/archive")
+def set_run_archived(run_id: str, body: ArchiveRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Owner-only, same as folder assignment -- archiving is "hide this from
+    # my own lists," which only makes sense for the person whose lists they
+    # are. A decider archiving someone else's request wouldn't mean
+    # anything real. Never touches run_events -- see Run.archived's
+    # docstring in models.py.
+    run = _get_run_or_404(db, run_id)
+    _require_owner_or_admin(run, user)
+    run.archived = body.archived
+    db.commit()
+    return {"run_id": run.id, "archived": run.archived}
+
+
+@router.patch("/{run_id}/folder")
+def set_run_folder(run_id: str, body: FolderAssignRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    run = _get_run_or_404(db, run_id)
+    _require_owner_or_admin(run, user)
+    if body.folder_id is not None:
+        folder = db.get(Folder, body.folder_id)
+        if folder is None or folder.user_id != user.id:
+            raise HTTPException(status_code=404, detail="Folder not found")
+    run.folder_id = body.folder_id
+    db.commit()
+    return {"run_id": run.id, "folder_id": run.folder_id}
+
+
 @router.get("/{run_id}")
 def get_run(run_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     run = _get_run_or_404(db, run_id)
@@ -77,6 +194,8 @@ def get_run(run_id: str, user: User = Depends(get_current_user), db: Session = D
         "requester_name": run.requester_name,
         "draft": run.draft,
         "routed_to": run.routed_to,
+        "archived": run.archived,
+        "folder_id": run.folder_id,
         "events": [
             {"type": e.event_type, "payload": e.payload, "created_at": e.created_at.isoformat()}
             for e in run.events
@@ -98,6 +217,8 @@ def list_runs(user: User = Depends(get_current_user), db: Session = Depends(get_
          # Already-loaded column, not a new query -- lets the sidebar list
          # show what each request actually is (category/amount) instead of
          # N identical "name · status" rows.
-         "draft": r.draft}
+         "draft": r.draft,
+         "archived": r.archived,
+         "folder_id": r.folder_id}
         for r in runs
     ]

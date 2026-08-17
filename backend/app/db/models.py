@@ -85,6 +85,15 @@ class Run(Base):
     # require_decider and routes/runs.py's respond_to_approval.
     routed_to = Column(String(20), nullable=True)
 
+    # Requester-only organizing tools, both additive migrations (see
+    # seed.py) -- archived hides a run from the owner's own lists without
+    # touching run_events (the audit trail stays intact and un-abbreviated,
+    # same append-only guarantee as everywhere else); folder_id groups runs
+    # the requester chose to file together. Neither affects who can decide
+    # a run or what a decider sees -- routed_to/can_decide own that.
+    archived = Column(Boolean, nullable=False, default=False)
+    folder_id = Column(UUID(as_uuid=False), ForeignKey("folders.id", ondelete="SET NULL"), nullable=True)
+
     created_at = Column(DateTime(timezone=True), default=_now)
     updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now)
 
@@ -151,6 +160,45 @@ class Notification(Base):
     # needs_approval | needs_review | approved | rejected -- nullable only
     # for pre-migration rows that couldn't be confidently backfilled.
     type = Column(String(20), nullable=True)
+
+
+class Folder(Base):
+    """
+    A requester's own grouping of their runs -- replaces the old Queue tab's
+    role as "a place to organize conversations." Owned by exactly one user;
+    no sharing, no decider visibility. Deleting a folder never deletes its
+    runs (see routes/folders.py) -- it just un-sets folder_id on them,
+    same "organizing metadata is disposable, the run itself never is"
+    principle as archived.
+    """
+    __tablename__ = "folders"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid)
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(80), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_now)
+
+
+class RunFeedback(Base):
+    """
+    Thumbs up/down on a resolved conversation -- one row per (run, user),
+    so re-rating overwrites rather than piling up duplicates. Run-level,
+    not per-turn: turns are a client-side array with no stable id to hang
+    a rating off, and the ask was "get the user experience," which a
+    single verdict per conversation already answers.
+    """
+    __tablename__ = "run_feedback"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=_uuid)
+    run_id = Column(UUID(as_uuid=False), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    rating = Column(Boolean, nullable=False)  # True = thumbs up, False = thumbs down
+    note = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_now)
+
+    __table_args__ = (
+        Index("ix_run_feedback_run_id_user_id", "run_id", "user_id", unique=True),
+    )
 
 
 class PolicyDoc(Base):

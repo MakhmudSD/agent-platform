@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { api, Card, PolicyCitationCard, PolicyRuleCard, RoutingDecision, TranscriptEntry } from "@/lib/api";
+import { api, attachmentUrl, Card, Folder, PolicyCitationCard, PolicyRuleCard, RoutingDecision, TranscriptEntry } from "@/lib/api";
 import { AuditLogEntry, LiveEvent, RunSocket } from "@/lib/ws";
 import { CardRenderer } from "@/components/CardRenderer";
+import { ConvoRowMenu } from "@/components/ConvoRowMenu";
 import { Sidebar } from "@/components/Sidebar";
 import { LivePanel, NODE_LABELS } from "@/components/LivePanel";
 import { RunProgress } from "@/components/RunProgress";
@@ -14,6 +15,11 @@ import {
 } from "@/components/AgentVisuals";
 import { EditableDraftFields } from "@/components/EditableDraftFields";
 import { Icon } from "@/components/Icon";
+import { NotificationBell } from "@/components/NotificationBell";
+import { ConversationFeedback } from "@/components/ConversationFeedback";
+import { dismissAgentHint, isAgentHintDismissed } from "@/lib/agentHint";
+import { getPinnedIds, togglePin } from "@/lib/pins";
+import { summarize } from "@/lib/stats";
 import { useAuth } from "@/lib/auth";
 
 // The design's core idea -- "the agent answers with visuals instead of
@@ -22,13 +28,34 @@ import { useAuth } from "@/lib/auth";
 // after the first clarifying question, policy-check as citations then the
 // real rule checklist, the Escalation/Routing Agent's decision the moment
 // it fires, and the Approval-Summary Agent's brief right after.
+// The real fixed pipeline (orchestrator/graph.py), not a marketing list --
+// these are the actual node names a run passes through, same ones
+// RunProgress and LivePanel label live. Shown once, on the empty landing
+// state, so a first-time user knows what's actually happening under "I'll
+// ask what's missing, check policy, and route it" before they've seen it
+// run once.
+const AGENT_INFO: { icon: string; name: string; purpose: string }[] = [
+  { icon: "chat", name: "Intake", purpose: "Gathers the details your request needs -- amount, cost center, date, justification -- by asking only for what's missing." },
+  { icon: "policy", name: "Policy Research", purpose: "Checks your request against real company policy documents and cites what applies." },
+  { icon: "edit_note", name: "Drafting", purpose: "Turns the gathered details and policy findings into the structured request that gets sent for approval." },
+  { icon: "alt_route", name: "Escalation & Routing", purpose: "Decides whether your request needs a standard approver or a specialist reviewer, based on policy rules." },
+  { icon: "summarize", name: "Approval Summary", purpose: "Writes the decision brief your approver sees -- what you're asking for and why it's routed the way it is." },
+];
+
+type RunListItem = {
+  run_id: string; status: string; requester_name: string; user_id: string | null;
+  routed_to: "approver" | "reviewer" | null; created_at: string; updated_at: string;
+  draft: Record<string, any> | null; archived?: boolean; folder_id?: string | null;
+};
+
 type Turn =
   | { from: "user" | "agent"; card?: Card; text?: string }
   | { from: "agent"; visual: "routing"; policyChecked: boolean; routedTo?: "approver" | "reviewer" }
   | { from: "agent"; visual: "policy_check"; citations: PolicyCitationCard[]; evaluation: PolicyRuleCard[] }
   | { from: "agent"; visual: "routing_decision"; decision: RoutingDecision }
   | { from: "agent"; visual: "approval_summary"; summary: string }
-  | { from: "agent"; visual: "draft_fields"; draft: Record<string, any> };
+  | { from: "agent"; visual: "draft_fields"; draft: Record<string, any> }
+  | { from: "user"; visual: "attachment"; filename: string; url: string };
 
 // Reconstructs the real conversation that produced a draft, for the
 // Approver/Reviewer's evidence column -- per design_handoff_approval_flow's
@@ -48,6 +75,55 @@ function transcriptFromEvents(events: { type: string; payload: Record<string, an
     }
   }
   return entries;
+}
+
+// Replays a finished/in-progress run's event log into the same visual turn
+// sequence the live WS stream builds up turn-by-turn (see handleEvent) --
+// this is what makes a requester's own conversation resumable instead of
+// resetting to blank the moment they navigate away and come back.
+function turnsFromEvents(events: { type: string; payload: Record<string, any> }[]): Turn[] {
+  const turns: Turn[] = [];
+  let routingIdx = -1;
+  let policyIdx = -1;
+
+  for (const e of events) {
+    if (e.type === "run_started" && e.payload?.initial_message) {
+      turns.push({ from: "user", text: e.payload.initial_message });
+    } else if (e.type === "clarifying_question_asked" && e.payload?.question) {
+      if (routingIdx === -1) {
+        routingIdx = turns.length;
+        turns.push({ from: "agent", visual: "routing", policyChecked: false });
+      }
+      // Agent turns without a `visual` are rendered through CardRenderer
+      // (see the turns.map ternary below), which dispatches on card.type --
+      // there's no bare-text agent bubble case, so this has to be a real
+      // ClarifyingQuestionCard, not a text turn.
+      turns.push({ from: "agent", card: { type: "clarifying_question", question: e.payload.question, field: e.payload.field ?? "" } });
+    } else if (e.type === "user_message" && e.payload?.message) {
+      turns.push({ from: "user", text: e.payload.message });
+    } else if (e.type === "policy_retrieved") {
+      const citations: PolicyCitationCard[] = (e.payload.matches ?? []).map((m: any) => ({
+        type: "policy_citation", title: m.title, excerpt: m.excerpt,
+      }));
+      if (policyIdx === -1) {
+        policyIdx = turns.length;
+        turns.push({ from: "agent", visual: "policy_check", citations, evaluation: [] });
+      } else {
+        turns[policyIdx] = { ...(turns[policyIdx] as any), citations };
+      }
+      if (routingIdx !== -1) turns[routingIdx] = { ...(turns[routingIdx] as any), policyChecked: true };
+    } else if (e.type === "policy_evaluated" && policyIdx !== -1) {
+      turns[policyIdx] = { ...(turns[policyIdx] as any), evaluation: e.payload.policy_evaluation ?? [] };
+    } else if (e.type === "routing_decided" && e.payload.routing_decision) {
+      turns.push({ from: "agent", visual: "routing_decision", decision: e.payload.routing_decision });
+      if (routingIdx !== -1) turns[routingIdx] = { ...(turns[routingIdx] as any), routedTo: e.payload.routing_decision.routed_to };
+    } else if (e.type === "approval_summary_generated" && e.payload.approval_summary) {
+      turns.push({ from: "agent", visual: "approval_summary", summary: e.payload.approval_summary });
+    } else if (e.type === "attachment_uploaded" && e.payload?.url) {
+      turns.push({ from: "user", visual: "attachment", filename: e.payload.filename ?? "Attachment", url: e.payload.url });
+    }
+  }
+  return turns;
 }
 
 export default function Home() {
@@ -81,8 +157,49 @@ export default function Home() {
   // not persisted, not authoritative, just "when this browser tab first saw
   // this run start."
   const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [agentHintDismissed, setAgentHintDismissed] = useState(true);
+  const [recentRuns, setRecentRuns] = useState<RunListItem[]>([]);
+  const [pinnedIds, setPinnedIds] = useState<string[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
+
+  useEffect(() => {
+    if (user) setPinnedIds(getPinnedIds(user.id));
+  }, [user]);
+
+  useEffect(() => {
+    if (user && !isDecider) api.listFolders().then(setFolders).catch(() => {});
+  }, [user, isDecider]);
+
+  function refetchRecentRuns() {
+    if (isDecider || !user) return;
+    api.listRuns().then((runs) => setRecentRuns(runs.filter((r: RunListItem) => r.user_id === user.id))).catch(() => {});
+  }
+
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+
+  useEffect(() => {
+    if (user) setAgentHintDismissed(isAgentHintDismissed(user.id));
+  }, [user]);
+
+  // The chat history list on the landing state -- "like Claude," a real
+  // list of past conversations to reopen, not just a blank composer every
+  // time. GET /runs isn't user-scoped server-side (deciders' queue
+  // filtering already does this client-side the same way, see /inbox), so
+  // this filters to conversations this user actually started.
+  useEffect(() => {
+    refetchRecentRuns();
+  }, [isDecider, user, runId]);
+
+  // Keeps the view anchored on whatever's being generated -- a new turn
+  // landing, a token streaming in, or the "Working..." indicator appearing
+  // -- instead of leaving the reader scrolled up on an older message while
+  // the real response lands off-screen below.
+  useEffect(() => {
+    scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [turns.length, busy, streamText]);
 
   const socketRef = useRef<RunSocket | null>(null);
+  const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
   // Guards the routing visual to one appearance per run -- the backend
   // event it's keyed off (clarifying_question_asked) can fire once per
   // missing field, but "here's where this goes next" is only news once.
@@ -110,6 +227,22 @@ export default function Home() {
     return () => socket.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
+
+  // /chat (a minimal composer, history moved to the sidebar there) hands
+  // off here instead of duplicating run-start logic -- it can't call the
+  // real graph.start_run() itself without reimplementing the WS streaming
+  // this page already does. RunSocket queues sends until its connection
+  // opens (see lib/ws.ts), so this is safe to fire before the socket-init
+  // effect above has finished connecting. Strips the param after consuming
+  // it so a refresh doesn't resend the same request.
+  useEffect(() => {
+    if (isDecider || runId || turns.length > 0) return;
+    const draft = searchParams.get("draft");
+    if (!draft) return;
+    handleSend(draft);
+    router.replace("/");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDecider, searchParams, runId]);
 
   // Replaces the existing inline "policy_check" turn in place (keeping its
   // position in the thread) rather than appending, so a retry or a later
@@ -223,10 +356,10 @@ export default function Home() {
     }
   }
 
-  function handleSend() {
+  function handleSend(overrideMessage?: string) {
     if (isDecider) return;
-    if (!input.trim() || busy || !socketRef.current) return;
-    const message = input.trim();
+    const message = (overrideMessage ?? input).trim();
+    if (!message || busy || !socketRef.current) return;
     setInput("");
     setWsError(null);
     setTurns((t) => [...t, { from: "user", text: message }]);
@@ -298,15 +431,92 @@ export default function Home() {
     setLiveNode(null);
   }
 
-  // Deep-link from /inbox: a decider clicking a pending request there
-  // navigates to /?run=<id> instead of /inbox rendering the decision
-  // screen itself, so there's one real place this view gets built. Only
-  // fires once per landing (not on every searchParams change) -- once the
-  // run is loaded into `turns`, the query param has done its job.
+  // The requester-side counterpart to handleSelectPendingRun: reopens the
+  // requester's own conversation (any status, not just awaiting_approval)
+  // as a real chat replay instead of the raw audit view /history uses.
+  // Fixes "in request tab it disappears once you leave the chat" -- there
+  // was previously no way back into a conversation once you navigated away.
+  async function handleSelectOwnRun(selectedRunId: string) {
+    if (busy) return;
+    setWsError(null);
+    let run;
+    try {
+      run = await api.getRun(selectedRunId);
+    } catch {
+      setWsError("Couldn't load that conversation. Try again.");
+      return;
+    }
+    const replayed = turnsFromEvents(run.events);
+    if (run.status === "awaiting_approval") {
+      const approvalEvent = [...run.events].reverse().find((e: any) => e.type === "approval_requested");
+      replayed.push({
+        from: "agent",
+        card: {
+          type: "approval_request", draft: run.draft,
+          policy_citations: approvalEvent?.payload?.policy_citations ?? [],
+          policy_evaluation: approvalEvent?.payload?.policy_evaluation ?? [],
+          routing_decision: approvalEvent?.payload?.routing_decision ?? null,
+          approval_summary: approvalEvent?.payload?.approval_summary ?? null,
+          transcript: transcriptFromEvents(run.events),
+        } as any,
+      });
+    } else if (run.status === "finalized" || run.status === "rejected") {
+      const decisionEvent = [...run.events].reverse().find((e: any) => e.type === "approved" || e.type === "rejected");
+      replayed.push({
+        from: "agent",
+        card: { type: "final_confirmation", status: run.status, draft: run.draft, reason: decisionEvent?.payload?.reason ?? null } as any,
+      });
+    }
+    setRunId(run.run_id);
+    setStatus(run.status);
+    setTurns(replayed);
+    setLiveDraft(run.draft);
+    setConfirmedFields(new Set(Object.keys(run.draft ?? {})));
+    setAuditLog([]);
+    setStreamText("");
+    setLiveNode(null);
+  }
+
+  // Fixes the real gap found doing a live two-tab test: events.emit() in
+  // the backend (app/core/events.py) only reaches a sink that's registered
+  // *right now*, and ws_runs.py only registers one for the duration of a
+  // single action (send message / approve) -- by design, per that module's
+  // own docstring ("a run is only ever watched by the one connection that
+  // started/resumed it"). So once a request reaches awaiting_approval and
+  // sits there, nothing pushes the decider's eventual decision back to the
+  // requester's open tab; it goes stale until they navigate away and back.
+  // A real push fix means multi-watcher support in that single-process
+  // event bus (it currently allows exactly one sink per run_id) -- bigger
+  // than this fix warrants. Polling while genuinely waiting is the bounded,
+  // safe version: only runs while status is awaiting_approval, on the
+  // requester's own run, stops the moment it isn't anymore.
   useEffect(() => {
-    if (!isDecider || runId) return;
+    if (isDecider || !runId || status !== "awaiting_approval") return;
+    const interval = setInterval(async () => {
+      let run;
+      try {
+        run = await api.getRun(runId);
+      } catch {
+        return;
+      }
+      if (run.status !== "awaiting_approval") handleSelectOwnRun(runId);
+    }, 8000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDecider, runId, status]);
+
+  // Deep-link from /inbox (or a resumed conversation link): both roles can
+  // land here with ?run=<id> -- deciders get the split evidence/decision
+  // screen (handleSelectPendingRun, awaiting_approval only), everyone else
+  // gets their own conversation replayed as chat (any status). Only fires
+  // once per landing -- once the run is loaded into `turns`, the query
+  // param has done its job.
+  useEffect(() => {
+    if (runId) return;
     const requestedRun = searchParams.get("run");
-    if (requestedRun) handleSelectPendingRun(requestedRun);
+    if (!requestedRun) return;
+    if (isDecider) handleSelectPendingRun(requestedRun);
+    else handleSelectOwnRun(requestedRun);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDecider, searchParams, runId]);
 
@@ -346,7 +556,10 @@ export default function Home() {
                 </span>
                 {runId && <span className="font-mono text-[12.5px] text-text-quaternary shrink-0">REQ-{runId.slice(0, 4).toUpperCase()}</span>}
               </div>
-              <span className="text-[13px] text-text-tertiary shrink-0">{user.name} · {user.role}</span>
+              <div className="flex items-center gap-3 shrink-0">
+                <span className="text-[13px] text-text-tertiary">{user.name} · {user.role}</span>
+                <NotificationBell />
+              </div>
             </div>
           )}
           {wsError && (
@@ -360,20 +573,25 @@ export default function Home() {
               onDecision={handleApproval}
             />
           ) : latestApprovalCard && decided ? (
-            <div className="flex-1 flex items-center justify-center bg-surface">
+            <div className="flex-1 flex flex-col items-center justify-center gap-4 bg-surface">
               <div className={`rounded-2xl px-8 py-6 text-center ${status === "finalized" ? "bg-accent-tint" : "bg-[#F6EAE2]"}`}>
                 <p className={`text-lg font-semibold mb-1 ${status === "finalized" ? "text-accent-dark" : "text-warning-strong"}`}>
                   {status === "finalized" ? "Request approved" : "Sent back to requester"}
                 </p>
                 <p className="text-sm text-text-secondary">Pick another request from your inbox to keep reviewing.</p>
               </div>
+              {runId && (
+                <div className="w-full max-w-sm">
+                  <ConversationFeedback runId={runId} />
+                </div>
+              )}
             </div>
           ) : (
             <div className="flex-1 flex items-center justify-center bg-surface text-center px-6">
               <div>
                 <h1 className="text-2xl font-semibold text-ink mb-2">Select a request to {decisionNoun}</h1>
                 <p className="text-text-secondary text-sm max-w-md mx-auto">
-                  Open your <a href="/inbox" className="underline hover:text-ink">inbox</a> to see what's waiting and pick one to {decisionNoun}.
+                  Open your <a href="/notifications" className="underline hover:text-ink">notifications</a> to see what's waiting and pick one to {decisionNoun}.
                 </p>
               </div>
             </div>
@@ -396,25 +614,146 @@ export default function Home() {
               </span>
               {runId && <span className="font-mono text-[12.5px] text-text-quaternary shrink-0">REQ-{runId.slice(0, 4).toUpperCase()}</span>}
             </div>
-            <span className="text-[13px] text-text-tertiary shrink-0">{user.name} · {user.role}</span>
+            <div className="flex items-center gap-3 shrink-0">
+              <span className="text-[13px] text-text-tertiary">{user.name} · {user.role}</span>
+              <NotificationBell />
+            </div>
           </div>
         )}
 
         <div className="flex-1 overflow-y-auto bg-surface">
-          <div className="max-w-3xl mx-auto px-[34px] py-10">
-            {turns.length === 0 ? (
-              <div className="pt-24 text-center">
-                <h1 className="text-2xl font-semibold text-ink mb-2">What do you need approved?</h1>
-                <p className="text-text-secondary text-sm max-w-md mx-auto">
-                  Describe your request in plain language. I'll ask what's missing, check company policy, and route it for approval.
-                </p>
+          {turns.length === 0 ? (
+            // Centered like a "new chat" landing, not a page with a hero up
+            // top and a composer pinned far below it -- intro and composer
+            // live in one centered column, and everything below (history,
+            // agent cards) is secondary content under that same column.
+            <div className="min-h-full flex items-center justify-center px-[34px] py-14">
+              <div className="w-full max-w-2xl">
+                <div className="text-center mb-6">
+                  <h1 className="text-[26px] font-semibold text-ink mb-2.5">What do you need approved?</h1>
+                  <p className="text-text-secondary text-sm max-w-md mx-auto">
+                    Describe your request in plain language. I'll ask what's missing, check company policy, and route it for approval.
+                  </p>
+                </div>
+
+                {!agentHintDismissed && (
+                  <div className="mb-6 flex items-center gap-3 rounded-xl bg-accent-tint px-4 py-2.5">
+                    <Icon name="lightbulb" size={16} filled={false} className="text-accent shrink-0" />
+                    <p className="text-[13px] text-ink-2 flex-1">
+                      This conversation isn't limited to one agent -- bring in a different one whenever the request needs it.
+                    </p>
+                    <button
+                      onClick={() => {
+                        if (user) dismissAgentHint(user.id);
+                        setAgentHintDismissed(true);
+                      }}
+                      aria-label="Dismiss"
+                      className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-accent hover:bg-accent/10 transition-colors"
+                    >
+                      <Icon name="close" size={15} filled={false} />
+                    </button>
+                  </div>
+                )}
+
+                <ChatComposer
+                  value={input}
+                  onChange={setInput}
+                  onSend={handleSend}
+                  disabled={busy}
+                  placeholder="Type your request..."
+                />
+
+                <div className="mt-14">
+                  <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">The agents in this conversation</p>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {AGENT_INFO.map((a) => (
+                      <div key={a.name} className="flex items-start gap-3 px-4 py-3.5 rounded-xl bg-card shadow-card">
+                        <span className="shrink-0 w-8 h-8 rounded-lg bg-accent-tint text-accent flex items-center justify-center">
+                          <Icon name={a.icon} size={16} filled={false} />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-ink">{a.name}</p>
+                          <p className="text-[12.5px] text-text-tertiary mt-0.5 leading-[1.4]">{a.purpose}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {(() => {
+                  const visibleRuns = recentRuns.filter((r) => !r.archived);
+                  return visibleRuns.length > 0 && (
+                  <div className="mt-14">
+                    <button
+                      onClick={() => setHistoryExpanded((e) => !e)}
+                      className="flex items-center gap-1.5 mb-3 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary hover:text-ink-muted transition-colors"
+                    >
+                      Your conversations
+                      <Icon name={historyExpanded ? "expand_less" : "expand_more"} size={15} filled={false} />
+                    </button>
+                    <div className="flex flex-col gap-1">
+                      {(historyExpanded ? visibleRuns : visibleRuns.slice(0, 3)).map((r) => (
+                        <div
+                          key={r.run_id}
+                          className="flex items-center gap-1 rounded-xl bg-card shadow-card hover:bg-neutral-fill/30 transition-colors"
+                        >
+                          <button
+                            onClick={() => router.push(`/?run=${r.run_id}`)}
+                            className="flex-1 min-w-0 flex items-center justify-between gap-3 text-left px-4 py-3"
+                          >
+                            <span className="text-sm font-medium text-ink truncate">{summarize(r.draft) ?? "New request"}</span>
+                            <span className="text-xs text-text-tertiary shrink-0 capitalize">{r.status.replace("_", " ")}</span>
+                          </button>
+                          <div className="pr-2.5">
+                            <ConvoRowMenu
+                              pinned={pinnedIds.includes(r.run_id)}
+                              folders={folders}
+                              currentFolderId={r.folder_id ?? null}
+                              onTogglePin={() => { if (user) setPinnedIds(togglePin(user.id, r.run_id)); }}
+                              onArchive={() => api.setRunArchived(r.run_id, true).then(refetchRecentRuns)}
+                              onAssignFolder={(fid) => api.setRunFolder(r.run_id, fid).then(refetchRecentRuns)}
+                              onCreateFolder={async (name) => {
+                                const folder = await api.createFolder(name);
+                                setFolders((fs) => [...fs, folder]);
+                                return folder.id;
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {!historyExpanded && visibleRuns.length > 3 && (
+                      <button
+                        onClick={() => setHistoryExpanded(true)}
+                        className="mt-1.5 text-[12px] font-medium text-accent hover:text-accent-dark transition-colors"
+                      >
+                        Show all {visibleRuns.length}
+                      </button>
+                    )}
+                  </div>
+                  );
+                })()}
               </div>
-            ) : (
+            </div>
+          ) : (
+          <div className="max-w-3xl mx-auto px-[34px] py-10">
               <div className="flex flex-col gap-4">
                 <RunProgress status={status} liveNode={liveNode} statusLabel={statusLabel} startedAt={startedAt} />
                 {turns.map((turn, i) => (
                   <div key={i} className={`animate-msgin ${turn.from === "user" ? "flex justify-end" : ""}`}>
-                    {turn.from === "user" ? (
+                    {"visual" in turn && turn.visual === "attachment" ? (
+                      <a
+                        href={attachmentUrl(turn.url)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-2.5 bg-neutral-fill rounded-[18px] rounded-br-[6px] px-4 py-2.5 max-w-[60%] shadow-bubble text-ink-2 hover:bg-neutral-fill-2 transition-colors"
+                      >
+                        <span className="shrink-0 w-8 h-8 rounded-lg bg-panel flex items-center justify-center text-text-tertiary">
+                          <Icon name="description" size={16} filled={false} />
+                        </span>
+                        <span className="min-w-0 text-[13.5px] font-medium truncate">{turn.filename}</span>
+                      </a>
+                    ) : turn.from === "user" ? (
                       <div className="bg-neutral-fill rounded-[18px] rounded-br-[6px] px-[19px] py-[13px] max-w-[60%] text-[15px] leading-[1.5] shadow-bubble text-ink-2">
                         {turn.text}
                       </div>
@@ -464,9 +803,13 @@ export default function Home() {
                     {liveNode ? (NODE_LABELS[liveNode] ?? liveNode) : "Working..."}
                   </div>
                 )}
+                {(status === "finalized" || status === "rejected") && runId && (
+                  <ConversationFeedback runId={runId} />
+                )}
+                <div ref={scrollAnchorRef} />
               </div>
-            )}
           </div>
+          )}
         </div>
 
         {wsError && (
@@ -475,32 +818,44 @@ export default function Home() {
           </div>
         )}
 
-        <div className="border-t border-hairline-soft bg-surface px-[34px] py-[22px]">
-          <div className="max-w-3xl mx-auto">
-            <div className="flex items-center gap-3 border border-control rounded-2xl px-[19px] py-2.5 bg-panel focus-within:border-ink-muted transition-colors">
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                disabled={busy || isAwaitingApproval}
-                placeholder={
-                  isAwaitingApproval
-                    ? "Waiting for approval decision above..."
-                    : "Type your request..."
-                }
-                className="flex-1 min-w-0 bg-transparent text-[15px] outline-none disabled:text-placeholder text-ink"
-              />
-              <button
-                onClick={handleSend}
-                disabled={busy || isAwaitingApproval}
-                aria-label="Send"
-                className="w-9 h-9 shrink-0 flex items-center justify-center rounded-xl bg-ink text-white disabled:opacity-30 hover:bg-[#332F28] transition-colors"
-              >
-                <Icon name="arrow_upward" size={19} />
-              </button>
+        {turns.length > 0 && (
+          <>
+            {!agentHintDismissed && (
+              <div className="px-[34px] pt-4">
+                <div className="max-w-3xl mx-auto flex items-center gap-3 rounded-xl bg-accent-tint px-4 py-2.5">
+                  <Icon name="lightbulb" size={16} filled={false} className="text-accent shrink-0" />
+                  <p className="text-[13px] text-ink-2 flex-1">
+                    This conversation isn't limited to one agent -- bring in a different one whenever the request needs it.
+                  </p>
+                  <button
+                    onClick={() => {
+                      if (user) dismissAgentHint(user.id);
+                      setAgentHintDismissed(true);
+                    }}
+                    aria-label="Dismiss"
+                    className="shrink-0 w-6 h-6 flex items-center justify-center rounded-md text-accent hover:bg-accent/10 transition-colors"
+                  >
+                    <Icon name="close" size={15} filled={false} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="border-t border-hairline-soft bg-surface px-[34px] py-[22px]">
+              <div className="max-w-3xl mx-auto">
+                <ChatComposer
+                  value={input}
+                  onChange={setInput}
+                  onSend={handleSend}
+                  disabled={busy || isAwaitingApproval}
+                  placeholder={isAwaitingApproval ? "Waiting for approval decision above..." : "Type your request..."}
+                  runId={runId}
+                  onAttachmentUploaded={(a) => setTurns((t) => [...t, { from: "user", visual: "attachment", filename: a.filename, url: a.url }])}
+                />
+              </div>
             </div>
-          </div>
-        </div>
+          </>
+        )}
       </div>
 
       {turns.length > 0 && (
@@ -512,6 +867,78 @@ export default function Home() {
           auditLog={auditLog}
         />
       )}
+    </div>
+  );
+}
+
+interface ChatComposerProps {
+  value: string;
+  onChange: (v: string) => void;
+  onSend: () => void;
+  disabled?: boolean;
+  placeholder?: string;
+  // Attaching a file needs a real run to attach it to (see
+  // POST /runs/{id}/attachments) -- undefined on the very first message,
+  // before a run exists, so the button only appears once one does. Same
+  // "attach within a conversation" pattern most chat products use, not a
+  // gap: there's nothing to upload a file *to* before that.
+  runId?: string | null;
+  onAttachmentUploaded?: (attachment: { filename: string; url: string }) => void;
+}
+
+function ChatComposer(props: ChatComposerProps) {
+  const { value, onChange, onSend, disabled, placeholder, runId, onAttachmentUploaded } = props;
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !runId) return;
+    setUploading(true);
+    try {
+      const attachment = await api.uploadAttachment(runId, file);
+      onAttachmentUploaded?.(attachment);
+    } catch {
+      // real error path would surface via wsError; a failed attach just
+      // leaves nothing added to the thread, nothing silently faked
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-3 border border-control rounded-2xl px-[19px] py-2.5 bg-panel focus-within:border-ink-muted transition-colors">
+      {runId && (
+        <>
+          <input ref={fileInputRef} type="file" onChange={handleFileChange} className="hidden" />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={disabled || uploading}
+            aria-label="Attach a file"
+            title="Attach a file"
+            className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-text-tertiary hover:bg-neutral-fill/60 hover:text-ink-muted disabled:opacity-30 transition-colors"
+          >
+            <Icon name={uploading ? "progress_activity" : "attach_file"} size={18} filled={false} className={uploading ? "animate-spin" : ""} />
+          </button>
+        </>
+      )}
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && onSend()}
+        disabled={disabled}
+        placeholder={placeholder}
+        className="flex-1 min-w-0 bg-transparent text-[15px] outline-none disabled:text-placeholder text-ink"
+      />
+      <button
+        onClick={onSend}
+        disabled={disabled}
+        aria-label="Send"
+        className="w-9 h-9 shrink-0 flex items-center justify-center rounded-xl bg-ink text-white disabled:opacity-30 hover:bg-[#332F28] transition-colors"
+      >
+        <Icon name="arrow_upward" size={19} />
+      </button>
     </div>
   );
 }
