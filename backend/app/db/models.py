@@ -122,13 +122,22 @@ class RunEvent(Base):
 
 class Notification(Base):
     """
-    Fired on approval_requested (tells an Approver something needs them)
-    and on finalized/rejected (tells the Requester their request resolved).
-    No role/user column, on purpose -- there's no real per-user identity in
-    this app yet (see role.tsx's "acting as" dropdown), so the frontend
-    decides who a notification is "for" by joining run_id against the
-    already-fetched runs list, same technique the sidebar's own Recent /
-    Pending approval filtering already uses.
+    Fired on approval_requested (tells a decider something needs them) and
+    on finalized/rejected (tells the Requester their request resolved).
+
+    Two different kinds of "who this is for," both real, not one column
+    doing double duty:
+    - `user_id`: a single, specific person (the requester, for approved/
+      rejected -- there's exactly one owner of a Run).
+    - `target_role`: a role, not a person (needs_approval/needs_review --
+      the approver/reviewer queue is open, any user holding that role can
+      pick it up; there's no single "assigned" approver to point user_id
+      at). Set exactly one of the two per row, per `type`.
+    Old rows (before this column existed) have both NULL -- the previous
+    message-prefix-matching approach couldn't reliably survive two
+    requesters sharing a name, which is the real bug this fixes, not just
+    an added feature. See seed.py's _migrate_notification_columns for the
+    real backfill from existing message text.
     """
     __tablename__ = "notifications"
 
@@ -137,6 +146,11 @@ class Notification(Base):
     message = Column(Text, nullable=False)
     read = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime(timezone=True), default=_now)
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    target_role = Column(String(20), nullable=True)
+    # needs_approval | needs_review | approved | rejected -- nullable only
+    # for pre-migration rows that couldn't be confidently backfilled.
+    type = Column(String(20), nullable=True)
 
 
 class PolicyDoc(Base):

@@ -19,5 +19,12 @@ def log_event(db: Session, run: Run, event_type: str, payload: dict) -> None:
     events.emit(run.id, {"type": "audit_event", "event_type": event_type, "payload": payload})
 
 
-def notify(db: Session, run: Run, message: str) -> None:
-    db.add(Notification(run_id=run.id, message=message))
+def notify(
+    db: Session, run: Run, message: str, *,
+    type: str, user_id: str | None = None, target_role: str | None = None,
+) -> None:
+    """type is always required -- there is no untyped notification anymore.
+    Exactly one of user_id (a specific person) / target_role (an open
+    role-queue) should be set per call; see Notification's docstring for
+    why they're different things, not the same column."""
+    db.add(Notification(run_id=run.id, message=message, type=type, user_id=user_id, target_role=target_role))

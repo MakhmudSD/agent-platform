@@ -65,6 +65,41 @@ def _migrate_runs_routed_to() -> None:
         conn.commit()
 
 
+def _migrate_notification_columns() -> None:
+    # Same additive pattern as the other _migrate_* functions -- adds
+    # user_id/target_role/type to notifications, then backfills existing
+    # rows from real data already on hand: the message text these rows
+    # were built from (still exactly the same prefixes notify()'s callers
+    # used before this migration) and a join back to runs for user_id.
+    # Real backfill, not a fabricated default -- a row this can't
+    # confidently classify (message text changed shape, or the run's
+    # owner is itself NULL on a pre-auth demo run) is left NULL rather
+    # than guessed at.
+    with engine.connect() as conn:
+        conn.execute(sql_text(
+            "ALTER TABLE notifications ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE"
+        ))
+        conn.execute(sql_text("ALTER TABLE notifications ADD COLUMN IF NOT EXISTS target_role VARCHAR(20)"))
+        conn.execute(sql_text("ALTER TABLE notifications ADD COLUMN IF NOT EXISTS type VARCHAR(20)"))
+        conn.execute(sql_text(
+            "UPDATE notifications SET type = 'needs_approval', target_role = 'approver' "
+            "WHERE type IS NULL AND message LIKE 'Awaiting approval:%'"
+        ))
+        conn.execute(sql_text(
+            "UPDATE notifications SET type = 'needs_review', target_role = 'reviewer' "
+            "WHERE type IS NULL AND message LIKE 'Awaiting review:%'"
+        ))
+        conn.execute(sql_text(
+            "UPDATE notifications n SET type = 'approved', user_id = r.user_id "
+            "FROM runs r WHERE n.run_id = r.id AND n.type IS NULL AND n.message LIKE '%was approved.'"
+        ))
+        conn.execute(sql_text(
+            "UPDATE notifications n SET type = 'rejected', user_id = r.user_id "
+            "FROM runs r WHERE n.run_id = r.id AND n.type IS NULL AND n.message LIKE '%was rejected.'"
+        ))
+        conn.commit()
+
+
 def _seed_demo_accounts(db) -> None:
     for account in DEMO_ACCOUNTS:
         if db.query(User).filter_by(email=account["email"]).first() is not None:
@@ -87,6 +122,7 @@ def main():
     _migrate_userrole_enum()  # adds 'reviewer' to the userrole enum type
     _migrate_runs_user_id()  # alters `runs` (existing table) -- create_all can't do this
     _migrate_runs_routed_to()
+    _migrate_notification_columns()
 
     db = SessionLocal()
     try:

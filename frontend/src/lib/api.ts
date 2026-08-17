@@ -33,10 +33,12 @@ export type Card = ClarifyingQuestionCard | ApprovalRequestCard | FinalConfirmat
 
 export type RunResponse = { run_id: string; status: string; card: Card };
 
+export type NotificationType = "needs_approval" | "needs_review" | "approved" | "rejected";
 export type Notification = {
   id: string;
   run_id: string;
   message: string;
+  type: NotificationType | null;
   read: boolean;
   created_at: string;
 };

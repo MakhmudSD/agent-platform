@@ -458,6 +458,8 @@ def approval_summary_node(state: OrchestratorState, config: RunnableConfig) -> d
         db, run,
         f"Awaiting {destination}: {run.requester_name}'s request "
         f"({state['draft'].get('category', 'request')}, ${state['draft'].get('amount', '?')}) needs your review.",
+        type="needs_review" if routing_decision["routed_to"] == "reviewer" else "needs_approval",
+        target_role=routing_decision["routed_to"],
     )
 
     return {"status": RunStatus.AWAITING_APPROVAL.value, "approval_summary": approval_summary}
@@ -498,6 +500,7 @@ def apply_approval_node(state: OrchestratorState, config: RunnableConfig) -> dic
             db, run,
             f"Your request ({run.draft.get('category', 'request')}, "
             f"${run.draft.get('amount', '?')}) was approved.",
+            type="approved", user_id=run.user_id,
         )
         status = RunStatus.FINALIZED.value
     else:
@@ -507,6 +510,7 @@ def apply_approval_node(state: OrchestratorState, config: RunnableConfig) -> dic
             db, run,
             f"Your request ({run.draft.get('category', 'request')}, "
             f"${run.draft.get('amount', '?')}) was rejected.",
+            type="rejected", user_id=run.user_id,
         )
         status = RunStatus.REJECTED.value
 
