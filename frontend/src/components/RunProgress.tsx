@@ -15,21 +15,20 @@ function elapsedLabel(startedAt: number | null): string {
   return m > 0 ? `${m}m ${s % 60}s` : `${s}s`;
 }
 
-// Horizontal 4-chip strip per design_handoff_approval_flow/README.md's
-// "Progress strip" spec -- driven entirely by the run's real status/liveNode
-// (see lib/progress.ts), never decorative. `startedAt` is a client-observed
-// timestamp (first audit event received), used only for the elapsed clock.
-export function RunProgress({
-  status,
-  liveNode,
-  statusLabel,
-  startedAt,
-}: {
+interface RunProgressProps {
   status: string | null;
   liveNode: string | null;
   statusLabel: string;
   startedAt: number | null;
-}) {
+}
+
+// Horizontal 4-chip strip per design_handoff_approval_flow/README.md's
+// "Progress strip" spec -- driven entirely by the run's real status/liveNode
+// (see lib/progress.ts), never decorative. `startedAt` is a client-observed
+// timestamp (first audit event received), used only for the elapsed clock.
+export function RunProgress(props: RunProgressProps) {
+  const { status, liveNode, statusLabel, startedAt } = props;
+
   const [, forceTick] = useState(0);
 
   useEffect(() => {

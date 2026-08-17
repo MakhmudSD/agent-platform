@@ -1,18 +1,17 @@
-// Material Symbols Rounded is a ligature font: the child text (e.g. "forum")
-// is the glyph name, not literal text -- see globals.css for the base class
-// this composes with. `filled` maps to the design system's FILL axis, used
-// for solid vs outline icon states (e.g. an active nav item vs inactive).
-export function Icon({
-  name,
-  size = 22,
-  filled = true,
-  className = "",
-}: {
+interface IconProps {
   name: string;
   size?: number;
   filled?: boolean;
   className?: string;
-}) {
+}
+
+// Material Symbols Rounded is a ligature font: the child text (e.g. "forum")
+// is the glyph name, not literal text -- see globals.css for the base class
+// this composes with. `filled` maps to the design system's FILL axis, used
+// for solid vs outline icon states (e.g. an active nav item vs inactive).
+export function Icon(props: IconProps) {
+  const { name, size = 22, filled = true, className = "" } = props;
+
   return (
     <span
       className={`material-symbols-rounded ${className}`}

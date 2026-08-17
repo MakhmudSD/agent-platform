@@ -39,19 +39,17 @@ function requestedAt(auditLog: AuditLogEntry[]): number | null {
 // send" button state has no real action behind it and is dropped in favor of
 // going straight from "still gathering" to "with the approver" the moment
 // the backend itself makes that transition.
-export function LivePanel({
-  status,
-  liveNode,
-  liveDraft,
-  streamText,
-  auditLog,
-}: {
+interface LivePanelProps {
   status: string | null;
   liveNode: string | null;
   liveDraft: Record<string, any> | null;
   streamText: string;
   auditLog: AuditLogEntry[];
-}) {
+}
+
+export function LivePanel(props: LivePanelProps) {
+  const { status, liveNode, liveDraft, streamText, auditLog } = props;
+
   const [typicalDecision, setTypicalDecision] = useState<string | null>(null);
 
   useEffect(() => {
@@ -139,7 +137,14 @@ export function LivePanel({
   );
 }
 
-function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+interface RowProps {
+  label: string;
+  value: string;
+  mono?: boolean;
+}
+
+function Row(props: RowProps) {
+  const { label, value, mono } = props;
   return (
     <div className="flex items-center justify-between">
       <span className="text-[13.5px] text-text-tertiary">{label}</span>

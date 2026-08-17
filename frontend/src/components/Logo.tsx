@@ -1,7 +1,12 @@
+interface LogoProps {
+  size?: number;
+}
+
 // Per design_handoff_approval_flow/README.md: 32x32 mark, radius 10, ink
 // fill, containing a 10x10 accent square rotated 45deg. Proportions scale
 // with `size` so smaller renderings (e.g. the login page) stay correct.
-export function Logo({ size = 32 }: { size?: number }) {
+export function Logo(props: LogoProps) {
+  const { size = 32 } = props;
   const radius = size * (10 / 32);
   const inner = size * (10 / 32);
 

@@ -1,8 +1,13 @@
 import { isTerminalStatus, RUN_STAGES, stageIndexForStatus } from "@/lib/progress";
 
+interface MiniProgressProps {
+  status: string;
+}
+
 // Five-segment strip rendered under each sidebar row. Purely a read-out of
 // the run's real `status` field (see lib/progress.ts) -- never decorative.
-export function MiniProgress({ status }: { status: string }) {
+export function MiniProgress(props: MiniProgressProps) {
+  const { status } = props;
   const idx = stageIndexForStatus(status);
   const terminal = isTerminalStatus(status);
 
