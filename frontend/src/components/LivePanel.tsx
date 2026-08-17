@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 import { AuditLogEntry } from "@/lib/ws";
+import { api } from "@/lib/api";
+import { typicalDecisionLabel } from "@/lib/stats";
+import { Icon } from "@/components/Icon";
 
 export const NODE_LABELS: Record<string, string> = {
   manager: "Deciding next step",
@@ -13,25 +16,29 @@ export const NODE_LABELS: Record<string, string> = {
   apply_approval: "Applying decision",
 };
 
-// Audit trail otherwise shows raw backend event_type strings
-// (manager_decision, policy_retrieved, ...) verbatim -- fine for an
-// engineer reading logs, confusing for anyone else watching the panel.
-// Raw value stays available via the row's title tooltip.
-const EVENT_LABELS: Record<string, string> = {
-  run_started: "Request received",
-  manager_decision: "Decided next step",
-  draft_updated: "Draft updated",
-  clarifying_question_asked: "Asked a clarifying question",
-  user_message: "You replied",
-  state_transition: "Moved to next stage",
-  policy_retrieved: "Checked company policy",
-  draft_finalized_for_review: "Draft finalized for review",
-  approval_requested: "Sent for approval",
-  approved: "Approved",
-  rejected: "Rejected",
-  finalized: "Finalized and submitted",
-};
+// Mirrors backend/app/orchestrator/vertical_employee_request.py's
+// REQUIRED_FIELDS exactly -- can't import the Python list, so this is kept
+// in sync by hand. Used only to compute a real capture percentage, never
+// to validate (the backend remains the actual source of truth there).
+const REQUIRED_FIELDS = ["category", "amount", "date", "justification", "cost_center"];
 
+function decidedBy(auditLog: AuditLogEntry[]): string | null {
+  const entry = [...auditLog].reverse().find((e) => e.event_type === "approved" || e.event_type === "rejected");
+  return entry?.payload?.approver_name ?? null;
+}
+
+function requestedAt(auditLog: AuditLogEntry[]): number | null {
+  const entry = auditLog.find((e) => e.event_type === "approval_requested");
+  return entry ? entry.ts : null;
+}
+
+// "What the approver will see" -- per design_handoff_approval_flow/README.md,
+// adapted for one real behavioral difference from the reference: that design
+// has an explicit manual "Send" step; this app's orchestrator auto-submits
+// once the draft is complete (no confirm interrupt exists), so the "ready to
+// send" button state has no real action behind it and is dropped in favor of
+// going straight from "still gathering" to "with the approver" the moment
+// the backend itself makes that transition.
 export function LivePanel({
   status,
   liveNode,
@@ -45,73 +52,98 @@ export function LivePanel({
   streamText: string;
   auditLog: AuditLogEntry[];
 }) {
-  const auditEndRef = useRef<HTMLDivElement>(null);
+  const [typicalDecision, setTypicalDecision] = useState<string | null>(null);
 
   useEffect(() => {
-    auditEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [auditLog.length]);
+    api.listRuns().then((runs) => setTypicalDecision(typicalDecisionLabel(runs as any))).catch(() => {});
+  }, []);
+
+  const draft = liveDraft ?? {};
+  const capturedCount = REQUIRED_FIELDS.filter((f) => draft[f] != null && draft[f] !== "").length;
+  const pct = Math.round((capturedCount / REQUIRED_FIELDS.length) * 100);
+  const isDecided = status === "finalized" || status === "rejected";
+  const isAwaiting = status === "awaiting_approval";
+  const approver = decidedBy(auditLog);
+  const waitingSince = requestedAt(auditLog);
 
   return (
-    <aside className="w-80 shrink-0 h-screen sticky top-0 flex flex-col border-l border-slate-200 bg-slate-50">
-      <div className="px-4 py-4 border-b border-slate-200">
-        <p className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 mb-2">
-          Live status
+    <aside className="w-[392px] shrink-0 h-screen sticky top-0 flex flex-col px-8 py-[26px] border-l border-hairline bg-app overflow-y-auto">
+      <p className="mb-1 text-sm font-semibold text-ink tracking-[-.01em]">What your approver will see</p>
+      <p className="mb-[18px] text-[13px] leading-[1.5] text-text-tertiary">
+        This fills in as you answer — nothing is sent until every detail is captured.
+      </p>
+
+      <div className="bg-panel rounded-[18px] px-[22px] py-5 shadow-panel">
+        <p className={`font-mono text-[28px] leading-none tracking-[-.035em] ${draft.amount != null ? "text-ink" : "text-placeholder"}`}>
+          {draft.amount != null ? `$${draft.amount}` : "—"}
         </p>
-        {liveNode ? (
-          <div className="flex items-center gap-2 text-sm text-slate-800">
-            <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse" />
-            {NODE_LABELS[liveNode] ?? liveNode}
-          </div>
-        ) : (
-          <div className="text-sm text-slate-400">
-            {status ? `Idle · ${status.replace("_", " ")}` : "Idle"}
-          </div>
-        )}
-        {streamText && (
-          <pre className="mt-2 text-[11px] leading-snug text-slate-500 whitespace-pre-wrap break-words max-h-24 overflow-y-auto font-mono">
-            {streamText}
-          </pre>
-        )}
+        <p className="mt-[9px] mb-4 text-[13.5px] text-text-secondary">
+          {draft.category ?? "Category pending"}{draft.date ? ` · ${draft.date}` : ""}
+        </p>
+        <div className="h-px bg-hairline-soft mb-4" />
+        <div className="flex flex-col gap-[13px]">
+          <Row label="Charged to" value={draft.cost_center ?? "—"} mono />
+          <Row label="Routes to" value={approver ? approver : isAwaiting || isDecided ? "Approver review" : "—"} />
+          {typicalDecision && <Row label="Typical decision" value={typicalDecision} />}
+        </div>
       </div>
 
-      {liveDraft && (
-        <div className="px-4 py-4 border-b border-slate-200">
-          <p className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 mb-2">
-            Draft (live)
-          </p>
-          <dl className="grid grid-cols-[80px_1fr] gap-y-1 text-xs">
-            {Object.entries(liveDraft).map(([key, value]) => (
-              <div key={key} className="contents">
-                <dt className="text-slate-400 capitalize">{key.replace(/_/g, " ")}</dt>
-                <dd className="text-slate-800 font-medium truncate" title={value ? String(value) : undefined}>
-                  {value ? String(value) : "—"}
-                </dd>
-              </div>
-            ))}
-          </dl>
+      {!isAwaiting && !isDecided && (
+        <div className="mt-[22px]">
+          <div className="flex items-baseline justify-between mb-[9px]">
+            <span className="text-[13.5px] text-text-secondary">{capturedCount} of {REQUIRED_FIELDS.length} details captured</span>
+            <span className="font-mono text-[12.5px] text-text-quaternary">{pct}%</span>
+          </div>
+          <div className="h-1.5 rounded-full bg-neutral-fill-2 overflow-hidden">
+            <span className="block h-1.5 rounded-full bg-ink transition-[width] duration-[450ms]" style={{ width: `${pct}%` }} />
+          </div>
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-4 py-4">
-        <p className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 mb-2">
-          Audit trail (live)
-        </p>
-        {auditLog.length === 0 ? (
-          <p className="text-xs text-slate-400">Events will appear here as the agent works.</p>
+      {streamText && (
+        <pre className="mt-4 text-[11px] leading-snug text-text-tertiary whitespace-pre-wrap break-words max-h-24 overflow-y-auto font-mono">
+          {streamText}
+        </pre>
+      )}
+
+      <div className="mt-auto pt-6">
+        {isDecided ? (
+          <div className={`rounded-[15px] px-[18px] py-4 ${status === "finalized" ? "bg-accent-tint" : "bg-[#F6EAE2]"}`}>
+            <p className={`text-sm font-semibold mb-1 ${status === "finalized" ? "text-accent-dark" : "text-warning-strong"}`}>
+              {status === "finalized" ? "Approved" : "Sent back"}
+            </p>
+            <p className="text-[13px] text-text-secondary">
+              {approver ? `Decided by ${approver}.` : "Decision recorded."}
+            </p>
+          </div>
+        ) : isAwaiting ? (
+          <div className="h-12 rounded-[15px] bg-neutral-fill flex items-center justify-center gap-[9px] text-[14.5px] font-medium text-ink-muted">
+            <span className="w-[7px] h-[7px] rounded-full bg-accent animate-breathe" />
+            {waitingSince ? `With the approver since ${new Date(waitingSince).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "With the approver"}
+          </div>
         ) : (
-          <ul className="space-y-1.5">
-            {auditLog.map((entry, i) => (
-              <li key={i} className="text-xs text-slate-600 flex items-start gap-1.5" title={entry.event_type}>
-                <span className="text-slate-300 mt-0.5 shrink-0">
-                  {new Date(entry.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                </span>
-                <span>{EVENT_LABELS[entry.event_type] ?? entry.event_type}</span>
-              </li>
-            ))}
-            <div ref={auditEndRef} />
-          </ul>
+          <div className="h-12 rounded-[15px] border border-dashed border-placeholder flex items-center justify-center gap-[9px] text-[15px] font-semibold text-text-tertiary">
+            <Icon name="lock" size={19} />
+            Not ready yet
+          </div>
         )}
       </div>
+
+      {liveNode && (
+        <div className="mt-4 flex items-center gap-2 text-xs text-text-tertiary">
+          <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+          {NODE_LABELS[liveNode] ?? liveNode}
+        </div>
+      )}
     </aside>
+  );
+}
+
+function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-[13.5px] text-text-tertiary">{label}</span>
+      <span className={`text-[13.5px] font-medium text-ink-2 ${mono ? "font-mono" : ""}`}>{value}</span>
+    </div>
   );
 }

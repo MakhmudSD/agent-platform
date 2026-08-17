@@ -1,8 +1,17 @@
+// Per design_handoff_approval_flow/README.md: 32x32 mark, radius 10, ink
+// fill, containing a 10x10 accent square rotated 45deg. Proportions scale
+// with `size` so smaller renderings (e.g. the login page) stay correct.
 export function Logo({ size = 32 }: { size?: number }) {
+  const radius = size * (10 / 32);
+  const inner = size * (10 / 32);
+
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <rect width="32" height="32" rx="8" fill="#0F172A" />
-      <path d="M9 16.5L13.5 21L23 10" stroke="#D97706" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <div
+      style={{ width: size, height: size, borderRadius: radius, background: "#191817" }}
+      className="flex items-center justify-center shrink-0"
+      aria-hidden="true"
+    >
+      <span style={{ width: inner, height: inner, background: "#0E7A68", borderRadius: 2, transform: "rotate(45deg)" }} />
+    </div>
   );
 }

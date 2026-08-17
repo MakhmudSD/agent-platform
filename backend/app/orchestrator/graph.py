@@ -177,8 +177,12 @@ def handle_message(db: Session, run: Run, message: str) -> Card:
     return _run_and_translate(db, run, Command(resume=message))
 
 
-def handle_approval_response(db: Session, run: Run, approved: bool, reason: str | None) -> Card:
+def handle_approval_response(
+    db: Session, run: Run, approved: bool, reason: str | None, approver_name: str | None = None,
+) -> Card:
     """Resumes a graph paused at interrupt_for_approval."""
     if run.status != RunStatus.AWAITING_APPROVAL:
         raise ValueError(f"Run {run.id} is not awaiting approval (status={run.status})")
-    return _run_and_translate(db, run, Command(resume={"approved": approved, "reason": reason}))
+    return _run_and_translate(
+        db, run, Command(resume={"approved": approved, "reason": reason, "approver_name": approver_name}),
+    )

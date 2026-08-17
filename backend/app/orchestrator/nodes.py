@@ -277,10 +277,11 @@ def apply_approval_node(state: OrchestratorState, config: RunnableConfig) -> dic
     run: Run = config["configurable"]["run"]
     decision = state["approval_decision"]
     approved, reason = decision["approved"], decision.get("reason")
+    approver_name = decision.get("approver_name")
 
     if approved:
         run.status = RunStatus.FINALIZED
-        log_event(db, run, "approved", {"reason": reason})
+        log_event(db, run, "approved", {"reason": reason, "approver_name": approver_name})
         log_event(db, run, "finalized", {"draft": run.draft})
         notify(
             db, run,
@@ -290,7 +291,7 @@ def apply_approval_node(state: OrchestratorState, config: RunnableConfig) -> dic
         status = RunStatus.FINALIZED.value
     else:
         run.status = RunStatus.REJECTED
-        log_event(db, run, "rejected", {"reason": reason})
+        log_event(db, run, "rejected", {"reason": reason, "approver_name": approver_name})
         notify(
             db, run,
             f"Your request ({run.draft.get('category', 'request')}, "

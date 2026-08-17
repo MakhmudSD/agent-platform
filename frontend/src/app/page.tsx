@@ -7,6 +7,9 @@ import { AuditLogEntry, LiveEvent, RunSocket } from "@/lib/ws";
 import { CardRenderer } from "@/components/CardRenderer";
 import { Sidebar } from "@/components/Sidebar";
 import { LivePanel, NODE_LABELS } from "@/components/LivePanel";
+import { RunProgress } from "@/components/RunProgress";
+import { ApproverDetail } from "@/components/ApproverDetail";
+import { Icon } from "@/components/Icon";
 import { useAuth } from "@/lib/auth";
 
 type Turn = { from: "user" | "agent"; card?: Card; text?: string };
@@ -34,6 +37,10 @@ export default function Home() {
   // pending-approval list -- otherwise a just-approved/rejected run lingers
   // in that list until role or activeRunId happens to change.
   const [refreshKey, setRefreshKey] = useState(0);
+  // Client-observed timestamp used only for RunProgress's elapsed clock --
+  // not persisted, not authoritative, just "when this browser tab first saw
+  // this run start."
+  const [startedAt, setStartedAt] = useState<number | null>(null);
 
   const socketRef = useRef<RunSocket | null>(null);
 
@@ -101,6 +108,7 @@ export default function Home() {
     if (runId) {
       socketRef.current.send({ action: "message", run_id: runId, message });
     } else {
+      setStartedAt(Date.now());
       socketRef.current.send({ action: "start", message });
     }
   }
@@ -147,54 +155,111 @@ export default function Home() {
     (t) => t.card?.type === "approval_request"
   );
   const isAwaitingApproval = status === "awaiting_approval";
+  const statusLabel = liveNode ? (NODE_LABELS[liveNode] ?? liveNode) : status ? status.replace("_", " ") : "";
 
   if (authLoading || !user) {
-    return <div className="min-h-screen bg-white" />;
+    return <div className="min-h-screen bg-app" />;
+  }
+
+  // Approver gets the split evidence/decision screen instead of a chat
+  // transcript -- handleSelectPendingRun already only ever puts one
+  // approval_request card into `turns`, so there's no history to lose.
+  if (isApprover) {
+    const decided = status === "finalized" || status === "rejected";
+    return (
+      <div className="flex min-h-screen bg-app">
+        <Sidebar activeRunId={runId ?? undefined} onSelectPendingRun={handleSelectPendingRun} refreshKey={refreshKey} />
+        <div className="flex-1 flex flex-col h-screen min-w-0">
+          {latestApprovalCard && (
+            <div className="h-14 shrink-0 flex items-center justify-between px-[34px] border-b border-hairline">
+              <div className="flex items-baseline gap-3 min-w-0">
+                <span className="text-[15px] font-semibold text-ink tracking-[-.01em] truncate">
+                  {(latestApprovalCard.card as any).draft?.category ?? "Request"}
+                </span>
+                {runId && <span className="font-mono text-[12.5px] text-text-quaternary shrink-0">REQ-{runId.slice(0, 4).toUpperCase()}</span>}
+              </div>
+              <span className="text-[13px] text-text-tertiary shrink-0">{user.name} · {user.role}</span>
+            </div>
+          )}
+          {wsError && (
+            <div className="px-6 py-2 bg-red-50 border-b border-red-100 text-xs text-red-600">{wsError}</div>
+          )}
+          {latestApprovalCard && !decided ? (
+            <ApproverDetail
+              card={latestApprovalCard.card as any}
+              runId={runId!}
+              busy={busy}
+              onDecision={handleApproval}
+            />
+          ) : latestApprovalCard && decided ? (
+            <div className="flex-1 flex items-center justify-center bg-surface">
+              <div className={`rounded-2xl px-8 py-6 text-center ${status === "finalized" ? "bg-accent-tint" : "bg-[#F6EAE2]"}`}>
+                <p className={`text-lg font-semibold mb-1 ${status === "finalized" ? "text-accent-dark" : "text-warning-strong"}`}>
+                  {status === "finalized" ? "Request approved" : "Sent back to requester"}
+                </p>
+                <p className="text-sm text-text-secondary">Pick another request from the sidebar to keep reviewing.</p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1 flex items-center justify-center bg-surface text-center px-6">
+              <div>
+                <h1 className="text-2xl font-semibold text-ink mb-2">Select a request to review</h1>
+                <p className="text-text-secondary text-sm max-w-md mx-auto">
+                  Choose a request from the sidebar queue to see its details and approve or reject it.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="flex min-h-screen bg-white">
+    <div className="flex min-h-screen bg-app">
       <Sidebar activeRunId={runId ?? undefined} onSelectPendingRun={handleSelectPendingRun} refreshKey={refreshKey} />
 
-      <div className="flex-1 flex flex-col h-screen">
-        <div className="flex-1 overflow-y-auto">
-          <div className="max-w-3xl mx-auto px-6 py-10">
+      <div className="flex-1 flex flex-col h-screen min-w-0">
+        {turns.length > 0 && (
+          <div className="h-14 shrink-0 flex items-center justify-between px-[34px] border-b border-hairline">
+            <div className="flex items-baseline gap-3 min-w-0">
+              <span className="text-[15px] font-semibold text-ink tracking-[-.01em] truncate">
+                {liveDraft?.category ?? "New request"}
+              </span>
+              {runId && <span className="font-mono text-[12.5px] text-text-quaternary shrink-0">REQ-{runId.slice(0, 4).toUpperCase()}</span>}
+            </div>
+            <span className="text-[13px] text-text-tertiary shrink-0">{user.name} · {user.role}</span>
+          </div>
+        )}
+
+        <div className="flex-1 overflow-y-auto bg-surface">
+          <div className="max-w-3xl mx-auto px-[34px] py-10">
             {turns.length === 0 ? (
               <div className="pt-24 text-center">
-                <h1 className="text-2xl font-semibold text-slate-900 mb-2">
-                  {isApprover ? "Select a request to review" : "What do you need approved?"}
-                </h1>
-                <p className="text-slate-500 text-sm max-w-md mx-auto">
-                  {isApprover
-                    ? "Choose a request from the sidebar queue to see its details and approve or reject it."
-                    : 'Describe your request. I\'ll ask what\'s missing, check company policy, and route it for approval. Try: "I need to expense a conference ticket, about $2400".'}
+                <h1 className="text-2xl font-semibold text-ink mb-2">What do you need approved?</h1>
+                <p className="text-text-secondary text-sm max-w-md mx-auto">
+                  Describe your request in plain language. I'll ask what's missing, check company policy, and route it for approval.
                 </p>
               </div>
             ) : (
-              <div className="space-y-5">
+              <div className="flex flex-col gap-4">
+                <RunProgress status={status} liveNode={liveNode} statusLabel={statusLabel} startedAt={startedAt} />
                 {turns.map((turn, i) => (
-                  <div key={i} className={turn.from === "user" ? "flex justify-end" : ""}>
+                  <div key={i} className={`animate-msgin ${turn.from === "user" ? "flex justify-end" : ""}`}>
                     {turn.from === "user" ? (
-                      <div className="bg-slate-900 text-white rounded-2xl px-4 py-2.5 max-w-[75%] text-sm">
+                      <div className="bg-neutral-fill rounded-[18px] rounded-br-[6px] px-[19px] py-[13px] max-w-[60%] text-[15px] leading-[1.5] shadow-bubble text-ink-2">
                         {turn.text}
                       </div>
                     ) : (
-                      <div className="max-w-[85%] text-sm leading-relaxed">
-                        <CardRenderer
-                          card={turn.card!}
-                          onApprovalDecision={
-                            isApprover && turn === latestApprovalCard && isAwaitingApproval
-                              ? handleApproval
-                              : undefined
-                          }
-                        />
+                      <div className="max-w-full">
+                        <CardRenderer card={turn.card!} />
                       </div>
                     )}
                   </div>
                 ))}
                 {busy && (
-                  <div className="max-w-[85%] flex items-center gap-2 text-sm text-slate-400 px-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-teal-500 animate-pulse shrink-0" />
+                  <div className="flex items-center gap-2 text-sm text-text-tertiary px-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse shrink-0" />
                     {liveNode ? (NODE_LABELS[liveNode] ?? liveNode) : "Working..."}
                   </div>
                 )}
@@ -209,47 +274,43 @@ export default function Home() {
           </div>
         )}
 
-        <div className="border-t border-slate-100 bg-white px-6 py-5">
+        <div className="border-t border-hairline-soft bg-surface px-[34px] py-[22px]">
           <div className="max-w-3xl mx-auto">
-            {isApprover ? (
-              <p className="text-center text-sm text-slate-400">
-                Approvers review existing requests and can't start new ones.
-              </p>
-            ) : (
-              <div className="flex items-center gap-2 rounded-full border border-slate-200 shadow-sm px-2 py-1.5 focus-within:border-slate-400 transition-colors">
-                <input
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                  disabled={busy || isAwaitingApproval}
-                  placeholder={
-                    isAwaitingApproval
-                      ? "Waiting for approval decision above..."
-                      : "Type your request..."
-                  }
-                  className="flex-1 bg-transparent px-3 py-1.5 text-sm outline-none disabled:text-slate-400"
-                />
-                <button
-                  onClick={handleSend}
-                  disabled={busy || isAwaitingApproval}
-                  aria-label="Send"
-                  className="w-8 h-8 shrink-0 flex items-center justify-center rounded-full bg-slate-900 text-white disabled:opacity-30 transition-opacity"
-                >
-                  ↑
-                </button>
-              </div>
-            )}
+            <div className="flex items-center gap-3 border border-control rounded-2xl px-[19px] py-2.5 bg-panel focus-within:border-ink-muted transition-colors">
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                disabled={busy || isAwaitingApproval}
+                placeholder={
+                  isAwaitingApproval
+                    ? "Waiting for approval decision above..."
+                    : "Type your request..."
+                }
+                className="flex-1 min-w-0 bg-transparent text-[15px] outline-none disabled:text-placeholder text-ink"
+              />
+              <button
+                onClick={handleSend}
+                disabled={busy || isAwaitingApproval}
+                aria-label="Send"
+                className="w-9 h-9 shrink-0 flex items-center justify-center rounded-xl bg-ink text-white disabled:opacity-30 hover:bg-[#332F28] transition-colors"
+              >
+                <Icon name="arrow_upward" size={19} />
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      <LivePanel
-        status={status}
-        liveNode={liveNode}
-        liveDraft={liveDraft}
-        streamText={streamText}
-        auditLog={auditLog}
-      />
+      {turns.length > 0 && (
+        <LivePanel
+          status={status}
+          liveNode={liveNode}
+          liveDraft={liveDraft}
+          streamText={streamText}
+          auditLog={auditLog}
+        />
+      )}
     </div>
   );
 }

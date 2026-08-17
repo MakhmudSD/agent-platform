@@ -4,8 +4,32 @@ import { useEffect, useState } from "react";
 import { api, Notification } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Logo } from "@/components/Logo";
+import { Icon } from "@/components/Icon";
+import { MiniProgress } from "@/components/MiniProgress";
 
-type RunSummary = { run_id: string; status: string; requester_name: string; user_id: string | null; created_at: string };
+type RunSummary = {
+  run_id: string;
+  status: string;
+  requester_name: string;
+  user_id: string | null;
+  created_at: string;
+  draft: Record<string, any> | null;
+};
+
+// What a request "is" for list purposes -- category + amount if the agent's
+// gathered that far, otherwise a plain placeholder. Without this every row
+// in the list was indistinguishable ("Alice · gathering" repeated N times),
+// which read as a job queue rather than a list of actual requests.
+function summarize(draft: Record<string, any> | null): string | null {
+  if (!draft?.category) return null;
+  const amount = draft.amount != null ? ` · $${draft.amount}` : "";
+  return `${draft.category}${amount}`;
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
+}
 
 export function Sidebar({
   activeRunId,
@@ -70,100 +94,161 @@ export function Sidebar({
   }
 
   return (
-    <aside className="w-64 shrink-0 h-screen sticky top-0 flex flex-col border-r border-slate-200 bg-[#F7F5F0]">
-      <div className="px-4 py-4 space-y-3">
-        <a href="/" className="flex items-center gap-2">
-          <Logo size={24} />
-          <span className="text-sm font-semibold text-slate-900">Request Assistant</span>
-          {relevantUnread.length > 0 && (
-            <button
-              onClick={clearNotifications}
-              title={relevantUnread.map((n) => n.message).join("\n")}
-              className="ml-auto flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10.5px] font-semibold leading-none hover:bg-red-600 transition-colors"
-            >
-              {relevantUnread.length}
-            </button>
-          )}
+    <div className="flex h-screen sticky top-0 shrink-0">
+      {/* Icon rail -- 68px, per design_handoff_approval_flow/README.md's
+          "Icon rail" spec exactly (widths, radii, colors). */}
+      {/* Exactly the rail the design spec defines: logo, forum, inbox,
+          history, avatar -- nothing added beyond it. "forum" and "inbox"
+          both point home since this app has no separate conversations-vs-
+          inbox screens (everything lives on one page); "history" is the
+          one nav icon with a genuinely distinct real destination. */}
+      <nav className="w-[68px] shrink-0 flex flex-col items-center gap-2 py-[18px] border-r border-hairline bg-rail">
+        <a href="/" className="mb-4">
+          <Logo size={32} />
         </a>
+
+        <RailButton iconName="forum" label="Requests" href="/" active />
+        <RailButton iconName="inbox" label="Requests" href="/" />
+        <RailButton iconName="history" label="Audit trail" href="/history" />
 
         {user && (
-          <div className="flex items-center justify-between rounded-md border border-slate-200 bg-white px-2.5 py-2">
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-slate-900 truncate">{user.name}</p>
-              <p className="text-[10.5px] uppercase tracking-wide text-slate-400">{user.role}</p>
-            </div>
-            <button
-              onClick={logout}
-              className="text-xs text-slate-400 hover:text-slate-700 shrink-0 ml-2"
+          <div className="mt-auto">
+            <div
+              title={`${user.name} · ${user.role}`}
+              className="w-8 h-8 rounded-[11px] bg-ink text-app flex items-center justify-center text-[11.5px] font-semibold"
             >
-              Sign out
-            </button>
+              {initials(user.name)}
+            </div>
           </div>
         )}
-        {role === "admin" && (
-          <a
-            href="/admin"
-            className="block text-xs text-slate-500 hover:text-slate-700 px-0.5"
-          >
-            Admin dashboard →
-          </a>
-        )}
-      </div>
+      </nav>
 
-      <div className="px-3">
-        <a
-          href="/"
-          className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 shadow-sm transition-colors"
-        >
-          <span className="text-base leading-none">+</span> New request
-        </a>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-3 py-4">
-        <p className="px-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-2">
-          {listLabel}
-        </p>
-        <div className="space-y-0.5">
-          {visibleRuns.map((r) =>
-            isApprover && onSelectPendingRun ? (
+      <aside className="w-64 shrink-0 h-screen flex flex-col border-r border-hairline bg-app">
+        <div className="px-4 py-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-ink">Request Assistant</span>
+            {relevantUnread.length > 0 && (
               <button
-                key={r.run_id}
-                onClick={() => onSelectPendingRun(r.run_id)}
-                className={`block w-full text-left px-2.5 py-2 rounded-md text-sm truncate transition-colors ${
-                  activeRunId === r.run_id
-                    ? "bg-slate-200/70 text-slate-900"
-                    : "text-slate-600 hover:bg-slate-200/40"
-                }`}
+                onClick={clearNotifications}
+                title={relevantUnread.map((n) => n.message).join("\n")}
+                className="ml-auto flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-warning-strong text-white text-[10.5px] font-semibold leading-none hover:opacity-90 transition-colors"
               >
-                {r.requester_name}{" "}
-                <span className="text-slate-400 font-normal">· {r.status}</span>
+                {relevantUnread.length}
               </button>
-            ) : (
-              <a
-                key={r.run_id}
-                href="/history"
-                className={`block px-2.5 py-2 rounded-md text-sm truncate transition-colors ${
-                  activeRunId === r.run_id
-                    ? "bg-slate-200/70 text-slate-900"
-                    : "text-slate-600 hover:bg-slate-200/40"
-                }`}
+            )}
+          </div>
+
+          {user && (
+            <div className="flex items-center justify-between rounded-xl border border-hairline bg-panel px-2.5 py-2">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-ink truncate">{user.name}</p>
+                <p className="text-[10.5px] uppercase tracking-wide text-text-tertiary">{user.role}</p>
+              </div>
+              <button
+                onClick={logout}
+                className="text-xs text-text-tertiary hover:text-ink shrink-0 ml-2"
               >
-                {r.requester_name}{" "}
-                <span className="text-slate-400 font-normal">· {r.status}</span>
-              </a>
-            )
+                Sign out
+              </button>
+            </div>
           )}
-          {visibleRuns.length === 0 && (
-            <p className="px-2 text-xs text-slate-400">{emptyLabel}</p>
+          {role === "admin" && (
+            <a
+              href="/admin"
+              className="block text-xs text-text-secondary hover:text-ink px-0.5"
+            >
+              Admin dashboard →
+            </a>
           )}
         </div>
-      </div>
 
-      <div className="px-3 py-4 border-t border-slate-200">
-        <a href="/history" className="text-xs text-slate-500 hover:text-slate-700">
-          View audit trail →
-        </a>
-      </div>
-    </aside>
+        <div className="px-3">
+          <a
+            href="/"
+            className="flex items-center gap-2 w-full px-3 py-2 rounded-xl text-sm font-medium text-ink-2 bg-panel border border-hairline hover:bg-neutral-fill/40 shadow-bubble transition-colors"
+          >
+            <span className="text-base leading-none">+</span> New request
+          </a>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-3 py-4">
+          <p className="px-2 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary mb-2">
+            {listLabel}
+          </p>
+          <div className="space-y-0.5">
+            {visibleRuns.map((r) => {
+              const summary = summarize(r.draft);
+              const rowContent = (
+                <>
+                  <span className="block truncate font-medium">
+                    {summary ?? "New request"}
+                  </span>
+                  <span className="block truncate text-xs text-text-tertiary">
+                    {isApprover ? `${r.requester_name} · ` : ""}
+                    {r.status.replace("_", " ")}
+                  </span>
+                  <MiniProgress status={r.status} />
+                </>
+              );
+              const rowClass = `block px-2.5 py-2 rounded-lg text-sm transition-colors ${
+                activeRunId === r.run_id ? "bg-neutral-fill text-ink" : "text-ink-2 hover:bg-neutral-fill/40"
+              }`;
+
+              return isApprover && onSelectPendingRun ? (
+                <button key={r.run_id} onClick={() => onSelectPendingRun(r.run_id)} className={`w-full text-left ${rowClass}`}>
+                  {rowContent}
+                </button>
+              ) : (
+                <a key={r.run_id} href="/history" className={rowClass}>
+                  {rowContent}
+                </a>
+              );
+            })}
+            {visibleRuns.length === 0 && (
+              <p className="px-2 text-xs text-text-tertiary">{emptyLabel}</p>
+            )}
+          </div>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function RailButton({
+  iconName,
+  label,
+  active,
+  disabled,
+  onClick,
+  href,
+}: {
+  iconName: string;
+  label: string;
+  active?: boolean;
+  disabled?: boolean;
+  onClick?: () => void;
+  href?: string;
+}) {
+  const classes = `w-11 h-11 flex items-center justify-center rounded-[14px] transition-colors ${
+    disabled
+      ? "text-placeholder cursor-default"
+      : active
+        ? "bg-ink text-white"
+        : "text-text-tertiary hover:bg-neutral-fill/50 hover:text-ink-muted"
+  }`;
+
+  const inner = <Icon name={iconName} size={22} filled />;
+
+  if (href && !disabled) {
+    return (
+      <a href={href} title={label} aria-label={label} className={classes}>
+        {inner}
+      </a>
+    );
+  }
+  return (
+    <button onClick={disabled ? undefined : onClick} title={label} aria-label={label} disabled={disabled} className={classes}>
+      {inner}
+    </button>
   );
 }

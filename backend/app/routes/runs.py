@@ -62,7 +62,7 @@ def respond_to_approval(
     user: User = Depends(require_role("approver", "admin")), db: Session = Depends(get_db),
 ):
     run = _get_run_or_404(db, run_id)
-    card = graph.handle_approval_response(db, run, body.approved, body.reason)
+    card = graph.handle_approval_response(db, run, body.approved, body.reason, approver_name=user.name)
     return {"run_id": run.id, "status": run.status, "card": card.model_dump()}
 
 
@@ -86,6 +86,15 @@ def list_runs(user: User = Depends(get_current_user), db: Session = Depends(get_
     runs = db.query(Run).order_by(Run.created_at.desc()).limit(50).all()
     return [
         {"run_id": r.id, "status": r.status, "requester_name": r.requester_name,
-         "user_id": r.user_id, "created_at": r.created_at.isoformat()}
+         "user_id": r.user_id, "created_at": r.created_at.isoformat(),
+         # updated_at is bumped by SQLAlchemy's onupdate on every write, so
+         # for a terminal (finalized/rejected) run it's a real proxy for
+         # "when it was decided" -- used client-side to compute an honest
+         # typical-decision-time stat, not a new column or new query.
+         "updated_at": r.updated_at.isoformat(),
+         # Already-loaded column, not a new query -- lets the sidebar list
+         # show what each request actually is (category/amount) instead of
+         # N identical "name · status" rows.
+         "draft": r.draft}
         for r in runs
     ]

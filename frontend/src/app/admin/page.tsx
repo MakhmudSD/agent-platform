@@ -10,12 +10,12 @@ type AdminUser = { id: string; email: string; name: string; role: string; create
 type RunSummary = { run_id: string; status: string; requester_name: string; created_at: string };
 
 const STATUS_STYLES: Record<string, string> = {
-  finalized: "bg-teal-50 text-teal-700",
-  rejected: "bg-slate-100 text-slate-600",
-  awaiting_approval: "bg-amber-100 text-amber-700",
-  gathering: "bg-slate-50 text-slate-500",
-  retrieving: "bg-slate-50 text-slate-500",
-  drafting: "bg-slate-50 text-slate-500",
+  finalized: "bg-accent-tint text-accent-dark",
+  rejected: "bg-neutral-fill text-ink-2",
+  awaiting_approval: "bg-neutral-fill text-ink-2",
+  gathering: "bg-app text-text-tertiary",
+  retrieving: "bg-app text-text-tertiary",
+  drafting: "bg-app text-text-tertiary",
 };
 
 export default function AdminPage() {
@@ -43,30 +43,30 @@ export default function AdminPage() {
   }, [user]);
 
   if (authLoading || !user || user.role !== "admin") {
-    return <div className="min-h-screen bg-white" />;
+    return <div className="min-h-screen bg-panel" />;
   }
 
   return (
-    <div className="flex min-h-screen bg-white">
+    <div className="flex min-h-screen bg-panel">
       <Sidebar />
 
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-5xl mx-auto px-6 py-10">
-          <h1 className="text-2xl font-semibold text-slate-900 mb-1">Admin dashboard</h1>
-          <p className="text-slate-500 text-sm mb-8">
+          <h1 className="text-2xl font-semibold text-ink mb-1">Admin dashboard</h1>
+          <p className="text-text-secondary text-sm mb-8">
             Read-only oversight of accounts and requests across the whole system.
           </p>
 
-          {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
+          {error && <p className="text-sm text-warning-strong mb-4">{error}</p>}
 
           <section className="mb-10">
-            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-3">
+            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary mb-3">
               Users ({users.length})
             </h2>
-            <div className="border border-slate-200 rounded-lg overflow-hidden">
+            <div className="border border-hairline rounded-lg overflow-hidden">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-400">
+                  <tr className="bg-app text-left text-[11px] uppercase tracking-wide text-text-tertiary">
                     <th className="px-4 py-2 font-semibold">Name</th>
                     <th className="px-4 py-2 font-semibold">Email</th>
                     <th className="px-4 py-2 font-semibold">Role</th>
@@ -75,16 +75,16 @@ export default function AdminPage() {
                 </thead>
                 <tbody>
                   {users.map((u) => (
-                    <tr key={u.id} className="border-t border-slate-100">
-                      <td className="px-4 py-2 text-slate-900 font-medium">{u.name}</td>
-                      <td className="px-4 py-2 text-slate-600">{u.email}</td>
-                      <td className="px-4 py-2 text-slate-600 capitalize">{u.role}</td>
-                      <td className="px-4 py-2 text-slate-400">{new Date(u.created_at).toLocaleDateString()}</td>
+                    <tr key={u.id} className="border-t border-hairline-soft">
+                      <td className="px-4 py-2 text-ink font-medium">{u.name}</td>
+                      <td className="px-4 py-2 text-text-secondary">{u.email}</td>
+                      <td className="px-4 py-2 text-text-secondary capitalize">{u.role}</td>
+                      <td className="px-4 py-2 text-text-tertiary">{new Date(u.created_at).toLocaleDateString()}</td>
                     </tr>
                   ))}
                   {users.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="px-4 py-6 text-center text-slate-400">No users yet.</td>
+                      <td colSpan={4} className="px-4 py-6 text-center text-text-tertiary">No users yet.</td>
                     </tr>
                   )}
                 </tbody>
@@ -93,13 +93,13 @@ export default function AdminPage() {
           </section>
 
           <section>
-            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-3">
+            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary mb-3">
               Requests ({runs.length})
             </h2>
-            <div className="border border-slate-200 rounded-lg overflow-hidden">
+            <div className="border border-hairline rounded-lg overflow-hidden">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-400">
+                  <tr className="bg-app text-left text-[11px] uppercase tracking-wide text-text-tertiary">
                     <th className="px-4 py-2 font-semibold">Requester</th>
                     <th className="px-4 py-2 font-semibold">Status</th>
                     <th className="px-4 py-2 font-semibold">Created</th>
@@ -107,19 +107,19 @@ export default function AdminPage() {
                 </thead>
                 <tbody>
                   {runs.map((r) => (
-                    <tr key={r.run_id} className="border-t border-slate-100">
-                      <td className="px-4 py-2 text-slate-900 font-medium">{r.requester_name}</td>
+                    <tr key={r.run_id} className="border-t border-hairline-soft">
+                      <td className="px-4 py-2 text-ink font-medium">{r.requester_name}</td>
                       <td className="px-4 py-2">
-                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs ${STATUS_STYLES[r.status] ?? "bg-slate-50 text-slate-500"}`}>
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs ${STATUS_STYLES[r.status] ?? "bg-app text-text-tertiary"}`}>
                           {r.status.replace("_", " ")}
                         </span>
                       </td>
-                      <td className="px-4 py-2 text-slate-400">{new Date(r.created_at).toLocaleString()}</td>
+                      <td className="px-4 py-2 text-text-tertiary">{new Date(r.created_at).toLocaleString()}</td>
                     </tr>
                   ))}
                   {runs.length === 0 && (
                     <tr>
-                      <td colSpan={3} className="px-4 py-6 text-center text-slate-400">No requests yet.</td>
+                      <td colSpan={3} className="px-4 py-6 text-center text-text-tertiary">No requests yet.</td>
                     </tr>
                   )}
                 </tbody>
