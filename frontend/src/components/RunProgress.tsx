@@ -20,14 +20,24 @@ interface RunProgressProps {
   liveNode: string | null;
   statusLabel: string;
   startedAt: number | null;
+  // Only meaningful pre-approval, while the requester is still filling in
+  // fields -- this used to live in a separate "N of 5 details captured"
+  // panel (LivePanel.tsx) with its own progress bar; folded in here as the
+  // one extra fact the status line needs, not a second bar.
+  captured?: { count: number; total: number } | null;
 }
 
-// Horizontal 4-chip strip per design_handoff_approval_flow/README.md's
-// "Progress strip" spec -- driven entirely by the run's real status/liveNode
-// (see lib/progress.ts), never decorative. `startedAt` is a client-observed
-// timestamp (first audit event received), used only for the elapsed clock.
+// A quiet, single-line status indicator -- driven entirely by the run's real
+// status/liveNode (see lib/progress.ts), never decorative. Replaces an
+// earlier 4-button-sized chip strip: that design read as a row of nav tabs
+// sitting above the thread rather than background progress, which is what
+// it actually is. This is closer to how a background task reads in Slack
+// or Linear: a status dot, the current stage in text, and a thin 4-segment
+// bar underneath -- same real information (current stage, elapsed time),
+// far less visual weight. `startedAt` is a client-observed timestamp (first
+// audit event received), used only for the elapsed clock.
 export function RunProgress(props: RunProgressProps) {
-  const { status, liveNode, statusLabel, startedAt } = props;
+  const { status, liveNode, statusLabel, startedAt, captured } = props;
 
   const [, forceTick] = useState(0);
 
@@ -43,37 +53,27 @@ export function RunProgress(props: RunProgressProps) {
   const terminal = isTerminalStatus(status);
 
   return (
-    <div className="pb-[18px] mb-4 border-b border-hairline">
-      <div className="flex items-baseline justify-between mb-[11px]">
-        <span className="text-[13.5px] font-semibold text-ink tracking-[-.01em]">{statusLabel}</span>
-        <span className="text-[12.5px] text-text-quaternary font-mono">{elapsedLabel(startedAt)}</span>
+    <div className="pb-3 mb-4">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="relative flex h-[7px] w-[7px] shrink-0">
+          {!terminal && (
+            <span className="animate-breathe absolute inline-flex h-full w-full rounded-full bg-accent opacity-60" />
+          )}
+          <span className={`relative inline-flex rounded-full h-[7px] w-[7px] ${terminal ? "bg-ink-muted" : "bg-accent"}`} />
+        </span>
+        <span className="text-[13px] font-medium text-ink-2">{statusLabel}</span>
+        {captured && (
+          <span className="text-[11.5px] text-text-quaternary">{captured.count} of {captured.total} details</span>
+        )}
+        <span className="text-[11.5px] text-text-quaternary font-mono ml-auto">{elapsedLabel(startedAt)}</span>
       </div>
-      <div className="flex gap-[5px] h-[42px]">
+      <div className="flex gap-1 h-[3px]">
         {STEP_LABELS.map((label, i) => {
           const done = terminal || i < idx;
           const active = !terminal && i === idx;
           return (
-            <div
-              key={label}
-              className={`relative flex items-center justify-center gap-1.5 rounded-xl px-2 overflow-hidden ${
-                done ? "flex-1 bg-ink" : active ? "flex-[1.2] bg-accent shadow-teal-strip" : "flex-1 bg-neutral-fill-2"
-              }`}
-            >
-              {active && (
-                <span className="absolute inset-y-0 left-0 bg-white/10 animate-fillbar" />
-              )}
-              {done && (
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" className="shrink-0 text-[#9A938A]">
-                  <path d="M12 2a10 10 0 100 20 10 10 0 000-20zm-1.2 14.6l-4.4-4.4 1.4-1.4 3 3 6-6 1.4 1.4-7.4 7.4z" fill="currentColor" />
-                </svg>
-              )}
-              <span
-                className={`relative text-[13.5px] whitespace-nowrap overflow-hidden text-ellipsis ${
-                  done ? "font-medium text-app" : active ? "font-semibold text-white" : "font-normal text-ink-muted"
-                }`}
-              >
-                {label}
-              </span>
+            <div key={label} className={`relative flex-1 rounded-full overflow-hidden ${done || active ? "bg-ink" : "bg-neutral-fill-2"}`}>
+              {active && <span className="absolute inset-y-0 left-0 w-full bg-white/30 animate-fillbar" />}
             </div>
           );
         })}

@@ -31,23 +31,8 @@ function formatDurationHours(hours: number): string {
 
 // updated_at is bumped by the DB on every write (SQLAlchemy onupdate); for
 // a terminal run that last write *is* the decision, so created_at ->
-// updated_at is a real proxy for decision latency, not a guess.
-export function typicalDecisionLabel(runs: RunLike[]): string | null {
-  const decided = runs.filter((r) => r.status === "finalized" || r.status === "rejected");
-  const durationsMs = decided
-    .map((r) => new Date(r.updated_at).getTime() - new Date(r.created_at).getTime())
-    .filter((ms) => Number.isFinite(ms) && ms > 0);
-  if (durationsMs.length === 0) return null;
-
-  const avgMs = durationsMs.reduce((a, b) => a + b, 0) / durationsMs.length;
-  const hours = avgMs / 3_600_000;
-  if (hours < 6) return "Same day";
-  return `~${formatDurationHours(hours)}`;
-}
-
-// Same created_at -> updated_at proxy as typicalDecisionLabel, but for one
-// run -- the design's comparable-decisions table has a "decided in" column
-// per row, not just an aggregate.
+// updated_at is a real proxy for decision latency, not a guess. The
+// design's comparable-decisions table has a "decided in" column per row.
 export function decisionLatencyLabel(run: RunLike): string | null {
   const ms = new Date(run.updated_at).getTime() - new Date(run.created_at).getTime();
   if (!Number.isFinite(ms) || ms <= 0) return null;

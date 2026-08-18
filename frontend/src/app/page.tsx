@@ -3,11 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, attachmentUrl, Card, Folder, PolicyCitationCard, PolicyRuleCard, RoutingDecision, TranscriptEntry } from "@/lib/api";
-import { AuditLogEntry, LiveEvent, RunSocket } from "@/lib/ws";
+import { LiveEvent, RunSocket } from "@/lib/ws";
 import { CardRenderer } from "@/components/CardRenderer";
 import { ConvoRowMenu } from "@/components/ConvoRowMenu";
 import { Sidebar } from "@/components/Sidebar";
-import { LivePanel, NODE_LABELS } from "@/components/LivePanel";
+import { NODE_LABELS, isTerminalStatus } from "@/lib/progress";
 import { RunProgress } from "@/components/RunProgress";
 import { ApproverDetail } from "@/components/ApproverDetail";
 import {
@@ -30,7 +30,7 @@ import { useAuth } from "@/lib/auth";
 // it fires, and the Approval-Summary Agent's brief right after.
 // The real fixed pipeline (orchestrator/graph.py), not a marketing list --
 // these are the actual node names a run passes through, same ones
-// RunProgress and LivePanel label live. Shown once, on the empty landing
+// RunProgress and NODE_LABELS (lib/progress.ts) live. Shown once, on the empty landing
 // state, so a first-time user knows what's actually happening under "I'll
 // ask what's missing, check policy, and route it" before they've seen it
 // run once.
@@ -41,6 +41,8 @@ const AGENT_INFO: { icon: string; name: string; purpose: string }[] = [
   { icon: "alt_route", name: "Escalation & Routing", purpose: "Decides whether your request needs a standard approver or a specialist reviewer, based on policy rules." },
   { icon: "summarize", name: "Approval Summary", purpose: "Writes the decision brief your approver sees -- what you're asking for and why it's routed the way it is." },
 ];
+
+const REQUIRED_FIELDS = ["category", "amount", "date", "justification", "cost_center"];
 
 type RunListItem = {
   run_id: string; status: string; requester_name: string; user_id: string | null;
@@ -152,7 +154,6 @@ export default function Home() {
   const [liveNode, setLiveNode] = useState<string | null>(null);
   const [liveDraft, setLiveDraft] = useState<Record<string, any> | null>(null);
   const [streamText, setStreamText] = useState("");
-  const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
   // Client-observed timestamp used only for RunProgress's elapsed clock --
   // not persisted, not authoritative, just "when this browser tab first saw
   // this run start."
@@ -302,7 +303,6 @@ export default function Home() {
         setLiveNode(null);
         break;
       case "audit_event":
-        setAuditLog((log) => [...log, { event_type: event.event_type, payload: event.payload, ts: Date.now() }]);
         if ((event.event_type === "draft_updated" || event.event_type === "draft_finalized_for_review") && event.payload.draft) {
           setLiveDraft(event.payload.draft);
         }
@@ -426,7 +426,6 @@ export default function Home() {
       },
     }]);
     setLiveDraft(run.draft);
-    setAuditLog([]);
     setStreamText("");
     setLiveNode(null);
   }
@@ -472,7 +471,6 @@ export default function Home() {
     setTurns(replayed);
     setLiveDraft(run.draft);
     setConfirmedFields(new Set(Object.keys(run.draft ?? {})));
-    setAuditLog([]);
     setStreamText("");
     setLiveNode(null);
   }
@@ -508,13 +506,16 @@ export default function Home() {
   // Deep-link from /inbox (or a resumed conversation link): both roles can
   // land here with ?run=<id> -- deciders get the split evidence/decision
   // screen (handleSelectPendingRun, awaiting_approval only), everyone else
-  // gets their own conversation replayed as chat (any status). Only fires
-  // once per landing -- once the run is loaded into `turns`, the query
-  // param has done its job.
+  // gets their own conversation replayed as chat (any status). Compares
+  // against the currently-loaded runId rather than just checking it's
+  // unset -- Sidebar/Home switch conversations via router.push(`/?run=...`)
+  // on the SAME route, which updates searchParams without remounting the
+  // page, so `if (runId) return` was a one-shot guard that only ever loaded
+  // the first conversation of a session: every later click updated the URL
+  // but this effect no-opped and the screen kept showing the old run.
   useEffect(() => {
-    if (runId) return;
     const requestedRun = searchParams.get("run");
-    if (!requestedRun) return;
+    if (!requestedRun || requestedRun === runId) return;
     if (isDecider) handleSelectPendingRun(requestedRun);
     else handleSelectOwnRun(requestedRun);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -531,7 +532,27 @@ export default function Home() {
     (t) => "card" in t && t.card?.type === "approval_request"
   ) as { card: Extract<Card, { type: "approval_request" }> } | undefined;
   const isAwaitingApproval = status === "awaiting_approval";
-  const statusLabel = liveNode ? (NODE_LABELS[liveNode] ?? liveNode) : status ? status.replace("_", " ") : "";
+  // NODE_LABELS entries are already properly-cased ("Deciding next step");
+  // only the raw-status fallback ("awaiting_approval" -> "awaiting
+  // approval") needs its first letter capitalized here -- this is now the
+  // single most prominent string in the compact status line (RunProgress),
+  // not a buried caption, since the 4-chip strip it used to sit inside was
+  // replaced with the status line.
+  const rawStatusLabel = status ? status.replace("_", " ") : "";
+  const statusLabel = liveNode
+    ? (NODE_LABELS[liveNode] ?? liveNode)
+    : rawStatusLabel
+    ? rawStatusLabel[0].toUpperCase() + rawStatusLabel.slice(1)
+    : "";
+  // Mirrors backend/app/orchestrator/vertical_employee_request.py's
+  // REQUIRED_FIELDS exactly -- can't import the Python list, so this is
+  // kept in sync by hand. Used only to compute a real capture count, never
+  // to validate (the backend remains the actual source of truth there).
+  // Only shown pre-approval: once a draft's finalized, "fields captured"
+  // isn't a meaningful fact about the request anymore.
+  const capturedInfo = status && status !== "awaiting_approval" && !isTerminalStatus(status) && liveDraft
+    ? { count: REQUIRED_FIELDS.filter((f) => liveDraft[f] != null && liveDraft[f] !== "").length, total: REQUIRED_FIELDS.length }
+    : null;
 
   if (authLoading || !user) {
     return <div className="min-h-screen bg-app" />;
@@ -738,7 +759,7 @@ export default function Home() {
           ) : (
           <div className="max-w-3xl mx-auto px-[34px] py-10">
               <div className="flex flex-col gap-4">
-                <RunProgress status={status} liveNode={liveNode} statusLabel={statusLabel} startedAt={startedAt} />
+                <RunProgress status={status} liveNode={liveNode} statusLabel={statusLabel} startedAt={startedAt} captured={capturedInfo} />
                 {turns.map((turn, i) => (
                   <div key={i} className={`animate-msgin ${turn.from === "user" ? "flex justify-end" : ""}`}>
                     {"visual" in turn && turn.visual === "attachment" ? (
@@ -754,7 +775,7 @@ export default function Home() {
                         <span className="min-w-0 text-[13.5px] font-medium truncate">{turn.filename}</span>
                       </a>
                     ) : turn.from === "user" ? (
-                      <div className="bg-neutral-fill rounded-[18px] rounded-br-[6px] px-[19px] py-[13px] max-w-[60%] text-[15px] leading-[1.5] shadow-bubble text-ink-2">
+                      <div className="bg-neutral-fill rounded-[18px] rounded-br-[6px] px-[17px] py-[11px] max-w-[60%] text-[14px] leading-[1.5] shadow-bubble text-ink-2">
                         {turn.text}
                       </div>
                     ) : "visual" in turn && turn.visual === "routing" ? (
@@ -858,15 +879,6 @@ export default function Home() {
         )}
       </div>
 
-      {turns.length > 0 && (
-        <LivePanel
-          status={status}
-          liveNode={liveNode}
-          liveDraft={liveDraft}
-          streamText={streamText}
-          auditLog={auditLog}
-        />
-      )}
     </div>
   );
 }
@@ -908,7 +920,7 @@ function ChatComposer(props: ChatComposerProps) {
   }
 
   return (
-    <div className="flex items-center gap-3 border border-control rounded-2xl px-[19px] py-2.5 bg-panel focus-within:border-ink-muted transition-colors">
+    <div className="flex items-center gap-3 border border-control rounded-2xl px-4 py-2 bg-panel focus-within:border-ink-muted transition-colors">
       {runId && (
         <>
           <input ref={fileInputRef} type="file" onChange={handleFileChange} className="hidden" />
@@ -929,7 +941,7 @@ function ChatComposer(props: ChatComposerProps) {
         onKeyDown={(e) => e.key === "Enter" && onSend()}
         disabled={disabled}
         placeholder={placeholder}
-        className="flex-1 min-w-0 bg-transparent text-[15px] outline-none disabled:text-placeholder text-ink"
+        className="flex-1 min-w-0 bg-transparent text-[14px] outline-none disabled:text-placeholder text-ink"
       />
       <button
         onClick={onSend}

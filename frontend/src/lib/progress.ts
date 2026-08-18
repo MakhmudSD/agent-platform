@@ -23,7 +23,7 @@ export function isTerminalStatus(status: string | null | undefined): boolean {
 // (one full turn), but the backend fires node_started events for every
 // intermediate node in between (policy_research, draft, ...) via the same
 // socket. Without this, the progress bar would sit frozen on the old status
-// for the entire time a turn is processing, even though LivePanel's own
+// for the entire time a turn is processing, even though RunProgress's own
 // live-node label is visibly moving. This maps the currently-active node to
 // the stage it's advancing toward so the bar moves in step with that label.
 const NODE_TO_STAGE: Partial<Record<string, number>> = {
@@ -45,3 +45,18 @@ export function currentStageIndex(status: string | null | undefined, liveNode: s
   const live = liveNode ? NODE_TO_STAGE[liveNode] : undefined;
   return live !== undefined ? Math.max(base, live) : base;
 }
+
+// Human-readable label for whichever node is live right now -- shown in the
+// compact status line above a conversation, and as the "agent is working"
+// line while a turn is still processing.
+export const NODE_LABELS: Record<string, string> = {
+  manager: "Deciding next step",
+  intake: "Gathering request details",
+  await_message: "Waiting on you",
+  policy_research: "Checking company policy",
+  draft: "Drafting the request",
+  escalation_routing: "Deciding who should review this",
+  approval_summary: "Preparing the decision brief",
+  interrupt_for_approval: "Waiting on a decision",
+  apply_approval: "Applying decision",
+};

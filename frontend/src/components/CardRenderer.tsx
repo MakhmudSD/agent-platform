@@ -20,7 +20,7 @@ export function CardRenderer(props: CardRendererProps) {
       return (
         <div>
           <p className="mb-1.5 text-[12.5px] text-text-quaternary">Agent</p>
-          <p className="text-[15.5px] leading-[1.6] text-ink-2 max-w-[74%]" style={{ textWrap: "pretty" }}>
+          <p className="text-[14px] leading-[1.55] text-ink-2 max-w-[74%]" style={{ textWrap: "pretty" }}>
             {card.question}
           </p>
         </div>
@@ -48,7 +48,7 @@ export function CardRenderer(props: CardRendererProps) {
       return (
         <div>
           <p className="mb-1.5 text-[12.5px] text-text-quaternary">Agent</p>
-          <p className="text-[15.5px] leading-[1.6] text-ink-2 max-w-[74%]" style={{ textWrap: "pretty" }}>
+          <p className="text-[14px] leading-[1.55] text-ink-2 max-w-[74%]" style={{ textWrap: "pretty" }}>
             {card.content}
           </p>
         </div>

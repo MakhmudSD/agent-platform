@@ -140,11 +140,11 @@ export default function Notifications() {
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto bg-surface px-9 py-8">
-          <div className="max-w-2xl mx-auto flex flex-col gap-8">
+        <div className="flex-1 overflow-y-auto bg-surface px-9 py-7">
+          <div className="max-w-2xl mx-auto flex flex-col gap-6">
             {isDecider && (
               <div>
-                <div className="flex items-center gap-2 mb-3">
+                <div className="flex items-center gap-2 mb-2.5">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">
                     Needs your decision
                   </p>
@@ -155,39 +155,39 @@ export default function Notifications() {
                   )}
                 </div>
                 {pendingRuns.length === 0 ? (
-                  <p className="text-sm text-text-tertiary">Nothing waiting on you right now.</p>
+                  <p className="text-[13.5px] text-text-tertiary">Nothing waiting on you right now.</p>
                 ) : (
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-col gap-1">
                     {pendingRuns.map((r) => {
                       const summary = summarize(r.draft);
                       const deciding = decidingId === r.run_id;
                       return (
                         <div
                           key={r.run_id}
-                          className="flex items-center gap-3 rounded-xl bg-card shadow-card px-4 py-3"
+                          className="flex items-center gap-2.5 rounded-xl bg-card shadow-card px-3.5 py-2.5"
                         >
-                          <span className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${TYPE_COLORS[isReviewer ? "needs_review" : "needs_approval"]}`}>
-                            <Icon name={isReviewer ? "fact_check" : "assignment_turned_in"} size={16} filled={false} />
+                          <span className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${TYPE_COLORS[isReviewer ? "needs_review" : "needs_approval"]}`}>
+                            <Icon name={isReviewer ? "fact_check" : "assignment_turned_in"} size={14} filled={false} />
                           </span>
                           <button
                             onClick={() => router.push(`/?run=${r.run_id}`)}
                             className="min-w-0 flex-1 text-left"
                           >
-                            <span className="block text-sm font-medium text-ink truncate">{summary ?? "New request"}</span>
-                            <span className="block text-xs text-text-tertiary mt-0.5">{r.requester_name} · awaiting your decision</span>
+                            <span className="block text-[13.5px] font-medium text-ink truncate">{summary ?? "New request"}</span>
+                            <span className="block text-[12px] text-text-tertiary mt-0.5">{r.requester_name} · awaiting your decision</span>
                           </button>
-                          <div className="shrink-0 flex items-center gap-1.5">
+                          <div className="shrink-0 flex items-center gap-1">
                             <button
                               onClick={() => handleDecide(r.run_id, false)}
                               disabled={deciding}
-                              className="px-3 py-1.5 rounded-lg text-[12px] font-medium text-warning-strong hover:bg-[#F6EAE2] disabled:opacity-40 transition-colors"
+                              className="px-2.5 py-1.5 rounded-lg text-[11.5px] font-medium text-warning-strong hover:bg-[#F6EAE2] disabled:opacity-40 transition-colors"
                             >
                               Send back
                             </button>
                             <button
                               onClick={() => handleDecide(r.run_id, true)}
                               disabled={deciding}
-                              className="px-3 py-1.5 rounded-lg text-[12px] font-medium bg-ink text-white hover:bg-[#332F28] disabled:opacity-40 transition-colors"
+                              className="px-2.5 py-1.5 rounded-lg text-[11.5px] font-medium bg-ink text-white hover:bg-[#332F28] disabled:opacity-40 transition-colors"
                             >
                               Approve
                             </button>
@@ -201,7 +201,7 @@ export default function Notifications() {
             )}
 
             <div>
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-3">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Feed</p>
                 <div className="flex items-center gap-0.5 p-0.5 rounded-full bg-neutral-fill-2">
                   {(["all", "unread"] as const).map((f) => (
@@ -219,14 +219,14 @@ export default function Notifications() {
               </div>
 
               {todayNotifications.length === 0 && earlierNotifications.length === 0 && (
-                <p className="text-sm text-text-tertiary">
+                <p className="text-[13.5px] text-text-tertiary">
                   {filter === "unread" ? "No unread notifications." : "No notifications yet."}
                 </p>
               )}
               {todayNotifications.length > 0 && (
-                <div className="mb-6">
-                  <p className="mb-2 text-[10.5px] font-medium text-text-quaternary">Today</p>
-                  <div className="flex flex-col gap-1">
+                <div className="mb-5">
+                  <p className="mb-1.5 text-[10.5px] font-medium text-text-quaternary">Today</p>
+                  <div className="flex flex-col gap-0.5">
                     {todayNotifications.map((n) => (
                       <NotificationRow key={n.id} notification={n} onOpen={openNotification} />
                     ))}
@@ -235,8 +235,8 @@ export default function Notifications() {
               )}
               {earlierNotifications.length > 0 && (
                 <div>
-                  <p className="mb-2 text-[10.5px] font-medium text-text-quaternary">Earlier</p>
-                  <div className="flex flex-col gap-1">
+                  <p className="mb-1.5 text-[10.5px] font-medium text-text-quaternary">Earlier</p>
+                  <div className="flex flex-col gap-0.5">
                     {earlierNotifications.map((n) => (
                       <NotificationRow key={n.id} notification={n} onOpen={openNotification} />
                     ))}
@@ -261,20 +261,20 @@ function NotificationRow(props: NotificationRowProps) {
   return (
     <button
       onClick={() => onOpen(n)}
-      className={`flex items-start gap-3 text-left px-4 py-3 rounded-xl transition-colors ${
+      className={`flex items-start gap-2.5 text-left px-3.5 py-2.5 rounded-xl transition-colors ${
         n.read ? "hover:bg-neutral-fill/30" : "bg-card shadow-card hover:bg-neutral-fill/30"
       }`}
     >
       {n.type ? (
-        <span className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${TYPE_COLORS[n.type]}`}>
-          <Icon name={TYPE_ICONS[n.type]} size={14} filled={false} />
+        <span className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${TYPE_COLORS[n.type]}`}>
+          <Icon name={TYPE_ICONS[n.type]} size={13} filled={false} />
         </span>
       ) : (
-        <span className="shrink-0 w-7 h-7" />
+        <span className="shrink-0 w-6 h-6" />
       )}
       <div className="min-w-0 flex-1">
-        <span className="block text-sm text-ink-2">{n.message}</span>
-        <span className="block text-xs text-text-tertiary mt-0.5 font-mono">
+        <span className="block text-[13.5px] text-ink-2">{n.message}</span>
+        <span className="block text-[11.5px] text-text-tertiary mt-0.5 font-mono">
           {new Date(n.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
         </span>
       </div>

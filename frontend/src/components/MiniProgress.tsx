@@ -4,9 +4,9 @@ interface MiniProgressProps {
   status: string;
 }
 
-// Single hairline track, same primitive as the right panel's "N of M
-// details captured" bar (LivePanel.tsx) -- a sidebar row is a compressed
-// version of that same progress, not a different visual language.
+// Single hairline track, same primitive as the compact status line's
+// stage bar (RunProgress.tsx) -- a sidebar row is a compressed version of
+// that same progress, not a different visual language.
 export function MiniProgress(props: MiniProgressProps) {
   const { status } = props;
   const idx = stageIndexForStatus(status);
