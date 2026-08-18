@@ -119,7 +119,7 @@ export default function LoginPage() {
 
         {mode === "signup" && (
           <p className="text-center text-[11px] text-text-tertiary mt-4">
-            New accounts start as Requesters. Approver access is granted separately.
+            New accounts start as Business Operators. Approver access is granted separately.
           </p>
         )}
 

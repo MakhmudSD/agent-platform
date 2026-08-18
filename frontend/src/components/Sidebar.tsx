@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { api, Folder, Notification } from "@/lib/api";
+import { api, Folder, Notification, ROLE_LABELS } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { isTypeEnabled } from "@/lib/notificationPrefs";
 import { getPinnedIds, togglePin } from "@/lib/pins";
@@ -219,7 +219,7 @@ export function Sidebar() {
           </button>
           <div className={`flex items-center gap-2.5 ${expanded ? "px-1" : ""}`}>
             <div
-              title={`${user.name} · ${user.role}`}
+              title={`${user.name} · ${ROLE_LABELS[user.role]}`}
               className="w-8 h-8 shrink-0 rounded-[11px] bg-ink text-app flex items-center justify-center text-[11.5px] font-semibold"
             >
               {initials(user.name)}
@@ -227,7 +227,7 @@ export function Sidebar() {
             {expanded && (
               <div className="min-w-0">
                 <p className="text-[12.5px] font-medium text-ink truncate">{user.name}</p>
-                <p className="text-[10.5px] text-text-tertiary capitalize truncate">{user.role}</p>
+                <p className="text-[10.5px] text-text-tertiary truncate">{ROLE_LABELS[user.role]}</p>
               </div>
             )}
           </div>

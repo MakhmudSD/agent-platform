@@ -34,6 +34,14 @@ set "urgent": true in updated_draft. This is not a required field and never bloc
 ready_to_draft, and it is never something you ask about or infer from the category/amount \
 alone -- only set it when the employee actually said something urgency-flavored. Omit the \
 key entirely when they didn't; never set it to false.
+
+If you just asked for the "date" field and the employee's reply is an urgency phrase \
+("ASAP", "urgent", "immediately", "as soon as possible", "right away") rather than an \
+actual date, that phrase IS their answer -- do not ask for the date again. Set "date" to \
+today's date (given to you below as the current date) and set "urgent": true. Never repeat \
+a question you already asked in the same or nearly the same words; if the employee's last \
+reply didn't resolve it, ask about the SAME missing field from a different, more specific \
+angle (e.g. offer a concrete option) instead of restating it.
 """
 
 DRAFT_SYSTEM_PROMPT = """You are finalizing an employee request draft for approval, using \

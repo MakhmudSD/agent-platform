@@ -46,6 +46,16 @@ export type Notification = {
 export type Role = "requester" | "approver" | "reviewer" | "admin";
 export type AuthUser = { id: string; email: string; name: string; role: Role };
 
+// Display-only relabeling -- "requester" is the real permission role
+// everywhere in the code (routing guards, backend checks), this is purely
+// what shows up in the UI so it reads like a job function, not a queue name.
+export const ROLE_LABELS: Record<Role, string> = {
+  requester: "Business Operator",
+  approver: "Approver",
+  reviewer: "Reviewer",
+  admin: "Admin",
+};
+
 export type Folder = { id: string; name: string; created_at: string; run_count: number };
 
 export type Attachment = { filename: string; url: string; size: number };

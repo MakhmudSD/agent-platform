@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { NotificationType } from "@/lib/api";
+import { NotificationType, ROLE_LABELS } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { getDisabledTypes, setTypeEnabled } from "@/lib/notificationPrefs";
 import { Sidebar } from "@/components/Sidebar";
@@ -75,7 +75,7 @@ export default function Settings() {
             </p>
             <p className="mb-5 text-[13px] text-text-tertiary">
               You're only shown the kinds of notifications your role can actually receive -- as{" "}
-              <span className="capitalize">{user.role}</span>, that's{" "}
+              <span>{ROLE_LABELS[user.role]}</span>, that's{" "}
               {typesForRole(user.role).map((t) => TYPE_LABELS[t].label.toLowerCase()).join(" and ")}. The rest
               can't happen for you (an approver never gets "your request was approved" about someone else's
               request), so there's nothing to toggle for them.

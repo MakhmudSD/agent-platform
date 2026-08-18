@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import date
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import interrupt
@@ -82,9 +83,24 @@ def manager_node(state: OrchestratorState, config: RunnableConfig) -> dict:
     db: Session = config["configurable"]["db"]
     run: Run = config["configurable"]["run"]
 
+    draft_complete = _draft_complete(state["draft"])
+
+    # Deterministic fast path: "route to intake while fields are still
+    # missing" isn't a judgment call, it's the same all(...) check the
+    # manager's own prompt tells it to apply. Skipping the LLM call here
+    # halves round-trip latency on every gathering turn -- the majority of
+    # turns in a typical conversation -- without changing behavior, since
+    # a real model call given draft_complete=false never picks anything
+    # other than "intake" anyway.
+    if not draft_complete:
+        next_node = "intake"
+        reasoning = "Draft is still missing required fields; gathering continues."
+        log_event(db, run, "manager_decision", {"next": next_node, "reasoning": reasoning})
+        return {"manager_target": next_node}
+
     context = {
         "draft": state["draft"],
-        "draft_complete": _draft_complete(state["draft"]),
+        "draft_complete": draft_complete,
         "retrieval_attempts": state["retrieval_attempts"],
         "retrieved_policies_count": len(state["retrieved_policies"]),
         "policy_relevance": state.get("policy_relevance"),
@@ -182,7 +198,10 @@ def intake_node(state: OrchestratorState, config: RunnableConfig) -> dict:
 
     result = structured_call(
         GATHER_SYSTEM_PROMPT,
-        f"Current draft: {state['draft']}\nLatest message from employee: {latest_message}",
+        f"Current date: {date.today().isoformat()}\n"
+        f"Current draft: {state['draft']}\n"
+        f"Question you last asked the employee: {state.get('pending_question') or '(none yet)'}\n"
+        f"Latest message from employee: {latest_message}",
     )
     draft = result.get("updated_draft", state["draft"])
     run.draft = draft

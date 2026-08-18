@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { api, attachmentUrl, Card, Folder, PolicyCitationCard, PolicyRuleCard, RoutingDecision, TranscriptEntry } from "@/lib/api";
+import { api, attachmentUrl, Card, Folder, PolicyCitationCard, PolicyRuleCard, ROLE_LABELS, RoutingDecision, TranscriptEntry } from "@/lib/api";
 import { LiveEvent, RunSocket } from "@/lib/ws";
 import { CardRenderer } from "@/components/CardRenderer";
 import { ConvoRowMenu } from "@/components/ConvoRowMenu";
@@ -583,7 +583,7 @@ export default function Home() {
                 {runId && <span className="font-mono text-[12.5px] text-text-quaternary shrink-0">REQ-{runId.slice(0, 4).toUpperCase()}</span>}
               </div>
               <div className="flex items-center gap-3 shrink-0">
-                <span className="text-[13px] text-text-tertiary">{user.name} · {user.role}</span>
+                <span className="text-[13px] text-text-tertiary">{user.name} · {ROLE_LABELS[user.role]}</span>
                 <NotificationBell />
               </div>
             </div>
@@ -646,7 +646,7 @@ export default function Home() {
               {runId && <span className="font-mono text-[12.5px] text-text-quaternary shrink-0">REQ-{runId.slice(0, 4).toUpperCase()}</span>}
             </div>
             <div className="flex items-center gap-3 shrink-0">
-              <span className="text-[13px] text-text-tertiary">{user.name} · {user.role}</span>
+              <span className="text-[13px] text-text-tertiary">{user.name} · {ROLE_LABELS[user.role]}</span>
               <NotificationBell />
             </div>
           </div>
@@ -954,7 +954,7 @@ function ChatComposer(props: ChatComposerProps) {
         className="flex-1 min-w-0 bg-transparent text-[14px] outline-none disabled:text-placeholder text-ink"
       />
       <button
-        onClick={onSend}
+        onClick={() => onSend()}
         disabled={disabled}
         aria-label="Send"
         className="w-9 h-9 shrink-0 flex items-center justify-center rounded-xl bg-ink text-white disabled:opacity-30 hover:bg-[#332F28] transition-colors"
