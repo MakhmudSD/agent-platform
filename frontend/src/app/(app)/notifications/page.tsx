@@ -6,7 +6,6 @@ import { api, Notification, NotificationType } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { isTypeEnabled } from "@/lib/notificationPrefs";
 import { summarize } from "@/lib/stats";
-import { Sidebar } from "@/components/Sidebar";
 import { Icon } from "@/components/Icon";
 
 const TYPE_ICONS: Record<NotificationType, string> = {
@@ -85,7 +84,7 @@ export default function Notifications() {
   }
 
   if (authLoading || !user) {
-    return <div className="min-h-screen bg-app" />;
+    return <div className="flex-1 bg-app" />;
   }
 
   const visibleNotifications = notifications.filter((n) => isTypeEnabled(user.id, n.type));
@@ -121,11 +120,8 @@ export default function Notifications() {
   }
 
   return (
-    <div className="flex min-h-screen bg-app">
-      <Sidebar />
-
-      <div className="flex-1 flex flex-col h-screen min-w-0">
-        <div className="h-14 shrink-0 flex items-center justify-between px-[34px] border-b border-hairline">
+    <div className="flex-1 flex flex-col h-screen min-w-0 bg-app">
+      <div className="h-14 shrink-0 flex items-center justify-between px-[34px] border-b border-hairline">
           <div>
             <span className="text-[15px] font-semibold text-ink tracking-[-.01em]">Notifications</span>
             <span className="ml-3 text-[13px] text-text-tertiary">Everything that's happened on your requests</span>
@@ -254,7 +250,6 @@ export default function Notifications() {
           </div>
         </div>
       </div>
-    </div>
   );
 }
 

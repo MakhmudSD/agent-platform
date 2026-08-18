@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, attachmentUrl, Card, Folder, PolicyCitationCard, PolicyRuleCard, ROLE_LABELS, RoutingDecision, TranscriptEntry } from "@/lib/api";
 import { LiveEvent, RunSocket } from "@/lib/ws";
 import { CardRenderer } from "@/components/CardRenderer";
 import { ConvoRowMenu } from "@/components/ConvoRowMenu";
-import { Sidebar } from "@/components/Sidebar";
 import { NODE_LABELS, isTerminalStatus } from "@/lib/progress";
 import { RunProgress } from "@/components/RunProgress";
 import { ApproverDetail } from "@/components/ApproverDetail";
@@ -133,7 +133,22 @@ function turnsFromEvents(events: { type: string; payload: Record<string, any> }[
 // run guard below for why this needs a distinct identity from a real id.
 const PENDING_START = "__pending_start__";
 
+// useSearchParams() (the ?run= deep-link read below) opts a page out of
+// static generation unless it's wrapped in Suspense -- Next.js's own
+// requirement for the build, not a real loading state this app needs
+// (everything here is behind auth and live data, there's nothing
+// meaningful to statically prerender). null fallback is fine: this only
+// ever suspends for an instant during the initial client render, well
+// before there's anything on screen worth not flashing.
 export default function Home() {
+  return (
+    <Suspense fallback={null}>
+      <HomeInner />
+    </Suspense>
+  );
+}
+
+function HomeInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading: authLoading } = useAuth();
@@ -614,7 +629,7 @@ export default function Home() {
     : null;
 
   if (authLoading || !user) {
-    return <div className="min-h-screen bg-app" />;
+    return <div className="flex-1 bg-app" />;
   }
 
   // Approver and Reviewer both get the split evidence/decision screen
@@ -625,9 +640,7 @@ export default function Home() {
     const decided = status === "finalized" || status === "rejected";
     const decisionVerb = isReviewer ? "review" : "approve";
     return (
-      <div className="flex min-h-screen bg-app">
-        <Sidebar />
-        <div className="flex-1 flex flex-col h-screen min-w-0">
+      <div className="flex-1 flex flex-col h-screen min-w-0 bg-app">
           {latestApprovalCard && (
             <div className="h-14 shrink-0 flex items-center justify-between px-[34px] border-b border-hairline">
               <div className="flex items-baseline gap-3 min-w-0">
@@ -676,21 +689,17 @@ export default function Home() {
               <div>
                 <h1 className="text-2xl font-semibold text-ink mb-2">Select a request to {decisionVerb}</h1>
                 <p className="text-text-secondary text-sm max-w-md mx-auto">
-                  Open your <a href="/notifications" className="underline hover:text-ink">notifications</a> to see what's waiting and pick one to {decisionVerb}.
+                  Open your <Link href="/notifications" className="underline hover:text-ink">notifications</Link> to see what's waiting and pick one to {decisionVerb}.
                 </p>
               </div>
             </div>
           )}
-        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen bg-app">
-      <Sidebar />
-
-      <div className="flex-1 flex flex-col h-screen min-w-0">
+    <div className="flex-1 flex flex-col h-screen min-w-0 bg-app">
         {turns.length > 0 && (
           <div className="h-14 shrink-0 flex items-center justify-between px-[34px] border-b border-hairline">
             <div className="flex items-baseline gap-3 min-w-0">
@@ -947,8 +956,6 @@ export default function Home() {
           </>
         )}
       </div>
-
-    </div>
   );
 }
 

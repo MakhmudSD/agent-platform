@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { api, Folder, Notification, ROLE_LABELS } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -125,10 +126,10 @@ export function Sidebar() {
           there's room here, unlike the 68px collapsed rail. */}
       {expanded ? (
         <div className="flex items-center justify-between mb-4 px-1">
-          <a href="/" className="flex items-center gap-2 min-w-0">
+          <Link href="/" className="flex items-center gap-2 min-w-0">
             <Logo size={28} />
             <span className="text-[13.5px] font-semibold text-ink truncate">Request Assistant</span>
-          </a>
+          </Link>
           <button
             onClick={toggleExpanded}
             title="Collapse sidebar"
@@ -326,10 +327,16 @@ function RailButton(props: RailButtonProps) {
   );
 
   if (href && !disabled) {
+    // Link, not a plain <a> -- this is the actual fix for "moving tabs
+    // isn't smooth": a bare href does a full browser navigation (reload
+    // every script/style/font, discard the whole React tree including the
+    // now-shared Sidebar, refetch everything from scratch). Link performs
+    // the same client-side transition router.push does, which is what
+    // makes the (app) layout's persistent Sidebar actually persist.
     return (
-      <a href={href} title={expanded ? undefined : label} aria-label={label} className={classes}>
+      <Link href={href} title={expanded ? undefined : label} aria-label={label} className={classes}>
         {inner}
-      </a>
+      </Link>
     );
   }
   return (

@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
-import { Sidebar } from "@/components/Sidebar";
 import { NotificationBell } from "@/components/NotificationBell";
 import { Icon } from "@/components/Icon";
 
@@ -37,36 +36,32 @@ export default function Chat() {
   }
 
   return (
-    <div className="flex min-h-screen bg-app">
-      <Sidebar />
+    <div className="flex-1 flex flex-col h-screen min-w-0 bg-app">
+      <div className="h-14 shrink-0 flex items-center justify-end px-[34px] border-b border-hairline">
+        <NotificationBell />
+      </div>
 
-      <div className="flex-1 flex flex-col h-screen min-w-0">
-        <div className="h-14 shrink-0 flex items-center justify-end px-[34px] border-b border-hairline">
-          <NotificationBell />
-        </div>
-
-        <div className="flex-1 flex items-center justify-center px-[34px]">
-          <div className="w-full max-w-lg text-center">
-            <p className="text-text-secondary text-sm mb-4">
-              {user ? `Ready when you are, ${user.name.split(" ")[0]}.` : "What do you need approved?"}
-            </p>
-            <div className="flex items-center gap-3 border border-control rounded-2xl px-[19px] py-2.5 bg-panel focus-within:border-ink-muted transition-colors">
-              <input
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                autoFocus
-                placeholder="Type your request..."
-                className="flex-1 min-w-0 bg-transparent text-[15px] outline-none disabled:text-placeholder text-ink"
-              />
-              <button
-                onClick={handleSend}
-                aria-label="Send"
-                className="w-9 h-9 shrink-0 flex items-center justify-center rounded-xl bg-ink text-white disabled:opacity-30 hover:bg-[#332F28] transition-colors"
-              >
-                <Icon name="arrow_upward" size={19} />
-              </button>
-            </div>
+      <div className="flex-1 flex items-center justify-center px-[34px]">
+        <div className="w-full max-w-lg text-center">
+          <p className="text-text-secondary text-sm mb-4">
+            {user ? `Ready when you are, ${user.name.split(" ")[0]}.` : "What do you need approved?"}
+          </p>
+          <div className="flex items-center gap-3 border border-control rounded-2xl px-[19px] py-2.5 bg-panel focus-within:border-ink-muted transition-colors">
+            <input
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSend()}
+              autoFocus
+              placeholder="Type your request..."
+              className="flex-1 min-w-0 bg-transparent text-[15px] outline-none disabled:text-placeholder text-ink"
+            />
+            <button
+              onClick={handleSend}
+              aria-label="Send"
+              className="w-9 h-9 shrink-0 flex items-center justify-center rounded-xl bg-ink text-white disabled:opacity-30 hover:bg-[#332F28] transition-colors"
+            >
+              <Icon name="arrow_upward" size={19} />
+            </button>
           </div>
         </div>
       </div>

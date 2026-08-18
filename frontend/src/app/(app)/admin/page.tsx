@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { Sidebar } from "@/components/Sidebar";
 
 type AdminUser = { id: string; email: string; name: string; role: string; created_at: string };
 type RunSummary = { run_id: string; status: string; requester_name: string; created_at: string };
@@ -43,14 +42,11 @@ export default function AdminPage() {
   }, [user]);
 
   if (authLoading || !user || user.role !== "admin") {
-    return <div className="min-h-screen bg-panel" />;
+    return <div className="flex-1 bg-panel" />;
   }
 
   return (
-    <div className="flex min-h-screen bg-panel">
-      <Sidebar />
-
-      <div className="flex-1 overflow-y-auto">
+    <div className="flex-1 overflow-y-auto bg-panel">
         <div className="max-w-5xl mx-auto px-6 py-10">
           <h1 className="text-2xl font-semibold text-ink mb-1">Admin dashboard</h1>
           <p className="text-text-secondary text-sm mb-8">
@@ -128,6 +124,5 @@ export default function AdminPage() {
           </section>
         </div>
       </div>
-    </div>
   );
 }

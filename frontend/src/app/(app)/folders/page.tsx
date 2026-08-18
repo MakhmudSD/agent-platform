@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { api, Folder } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { summarize } from "@/lib/stats";
-import { Sidebar } from "@/components/Sidebar";
 import { MiniProgress } from "@/components/MiniProgress";
 import { Icon } from "@/components/Icon";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -53,7 +52,7 @@ export default function Folders() {
   }, [user]);
 
   if (authLoading || !user) {
-    return <div className="min-h-screen bg-app" />;
+    return <div className="flex-1 bg-app" />;
   }
 
   const ownRuns = runs.filter((r) => !r.archived);
@@ -83,17 +82,14 @@ export default function Folders() {
   }
 
   return (
-    <div className="flex min-h-screen bg-app">
-      <Sidebar />
-
-      <div className="flex-1 flex flex-col h-screen min-w-0">
-        <div className="h-14 shrink-0 flex items-center justify-between px-[34px] border-b border-hairline">
-          <div>
-            <span className="text-[15px] font-semibold text-ink tracking-[-.01em]">Folders</span>
-            <span className="ml-3 text-[13px] text-text-tertiary">Organize your conversations</span>
-          </div>
-          <NotificationBell />
+    <div className="flex-1 flex flex-col h-screen min-w-0 bg-app">
+      <div className="h-14 shrink-0 flex items-center justify-between px-[34px] border-b border-hairline">
+        <div>
+          <span className="text-[15px] font-semibold text-ink tracking-[-.01em]">Folders</span>
+          <span className="ml-3 text-[13px] text-text-tertiary">Organize your conversations</span>
         </div>
+        <NotificationBell />
+      </div>
 
         <div className="flex-1 overflow-y-auto bg-surface px-9 py-8">
           <div className="max-w-3xl mx-auto flex flex-col gap-6">
@@ -188,6 +184,5 @@ export default function Folders() {
           </div>
         </div>
       </div>
-    </div>
   );
 }
