@@ -128,6 +128,11 @@ function turnsFromEvents(events: { type: string; payload: Record<string, any> }[
   return turns;
 }
 
+// Sentinel for "an action was sent before any run_id existed" (the very
+// first message of a brand-new conversation) -- see the in-flight/viewed
+// run guard below for why this needs a distinct identity from a real id.
+const PENDING_START = "__pending_start__";
+
 export default function Home() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -201,6 +206,19 @@ export default function Home() {
 
   const socketRef = useRef<RunSocket | null>(null);
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  // The backend processes one WS action at a time per connection (see
+  // routes/ws_runs.py's module docstring), but the user can switch which
+  // conversation is on screen while that single action is still in flight
+  // (loading a different run is a read, not a send -- nothing to guard
+  // there). These two refs are what keep a slow-to-arrive progress/result
+  // event for run A from landing on run B's turns after the user has
+  // already switched: activeActionRunIdRef is who the in-flight action is
+  // FOR, viewedRunIdRef is what's actually on screen right now, and every
+  // mutating handleEvent case only applies when they still match. Refs, not
+  // state, because they're read synchronously inside the WS callback and
+  // don't themselves need to trigger a render.
+  const activeActionRunIdRef = useRef<string | null>(null);
+  const viewedRunIdRef = useRef<string | null>(null);
   // Guards the routing visual to one appearance per run -- the backend
   // event it's keyed off (clarifying_question_asked) can fire once per
   // missing field, but "here's where this goes next" is only news once.
@@ -293,16 +311,27 @@ export default function Home() {
   }
 
   function handleEvent(event: LiveEvent) {
+    // True only while the run currently on screen is the same one the
+    // in-flight WS action was sent for -- see the refs' own comment above
+    // for why. A progress/result event that fails this check belongs to a
+    // run the user has since navigated away from; the action itself still
+    // completes and persists server-side (that's true regardless of this
+    // check), it just doesn't get painted onto whatever's on screen now.
+    const forCurrentView =
+      activeActionRunIdRef.current !== null && activeActionRunIdRef.current === viewedRunIdRef.current;
     switch (event.type) {
       case "node_started":
+        if (!forCurrentView) break;
         setLiveNode(event.node);
         setStreamText("");
         break;
       case "node_finished":
       case "node_failed":
+        if (!forCurrentView) break;
         setLiveNode(null);
         break;
       case "audit_event":
+        if (!forCurrentView) break;
         if ((event.event_type === "draft_updated" || event.event_type === "draft_finalized_for_review") && event.payload.draft) {
           setLiveDraft(event.payload.draft);
         }
@@ -339,17 +368,26 @@ export default function Home() {
         }
         break;
       case "llm_token":
+        if (!forCurrentView) break;
         setStreamText((s) => s + event.text);
         break;
       case "result":
-        setRunId(event.run_id);
-        setStatus(event.status);
-        setTurns((t) => [...t, { from: "agent", card: event.card }]);
+        // The one in-flight action is genuinely done either way -- always
+        // free the composer and clear the in-flight marker. Only paint the
+        // result onto state if it's still what's on screen.
+        if (forCurrentView) {
+          viewedRunIdRef.current = event.run_id;
+          setRunId(event.run_id);
+          setStatus(event.status);
+          setTurns((t) => [...t, { from: "agent", card: event.card }]);
+          setLiveNode(null);
+        }
+        activeActionRunIdRef.current = null;
         setBusy(false);
-        setLiveNode(null);
         break;
       case "error":
-        setWsError(event.detail);
+        if (forCurrentView) setWsError(event.detail);
+        activeActionRunIdRef.current = null;
         setBusy(false);
         setLiveNode(null);
         break;
@@ -365,11 +403,15 @@ export default function Home() {
     setTurns((t) => [...t, { from: "user", text: message }]);
     setBusy(true);
     if (runId) {
+      activeActionRunIdRef.current = runId;
+      viewedRunIdRef.current = runId;
       socketRef.current.send({ action: "message", run_id: runId, message });
     } else {
       routingShownRef.current = false;
       setConfirmedFields(new Set());
       setStartedAt(Date.now());
+      activeActionRunIdRef.current = PENDING_START;
+      viewedRunIdRef.current = PENDING_START;
       socketRef.current.send({ action: "start", message });
     }
   }
@@ -385,6 +427,8 @@ export default function Home() {
     setWsError(null);
     setConfirmedFields((f) => new Set(f).add(field));
     setBusy(true);
+    activeActionRunIdRef.current = runId;
+    viewedRunIdRef.current = runId;
     socketRef.current.send({ action: "field_patch", run_id: runId, field, value });
   }
 
@@ -397,15 +441,25 @@ export default function Home() {
   // policy_evaluation the live interrupt payload had, so the evidence view
   // is identical either way.
   async function handleSelectPendingRun(selectedRunId: string) {
-    if (busy) return;
+    // Loading a different run is a read, not a send -- no reason to block
+    // it on whatever the composer is doing elsewhere (see the refs' comment
+    // above). Switch the declared view immediately, synchronously, so any
+    // in-flight action's progress events stop landing on the old view the
+    // instant the user clicks, not whenever this fetch happens to resolve.
+    viewedRunIdRef.current = selectedRunId;
     setWsError(null);
     let run;
     try {
       run = await api.getRun(selectedRunId);
     } catch {
-      setWsError("Couldn't load that request. Try again.");
+      if (viewedRunIdRef.current === selectedRunId) setWsError("Couldn't load that request. Try again.");
       return;
     }
+    // The user may have clicked a third conversation while this fetch was
+    // in flight -- if so, viewedRunIdRef has already moved on, and applying
+    // this now-stale response would yank the screen back to a run they're
+    // no longer looking at.
+    if (viewedRunIdRef.current !== selectedRunId) return;
     if (run.status !== "awaiting_approval") {
       setWsError("This request is no longer awaiting approval.");
       return;
@@ -436,15 +490,18 @@ export default function Home() {
   // Fixes "in request tab it disappears once you leave the chat" -- there
   // was previously no way back into a conversation once you navigated away.
   async function handleSelectOwnRun(selectedRunId: string) {
-    if (busy) return;
+    // See handleSelectPendingRun's comment above -- same reasoning, same
+    // synchronous-then-recheck pattern against viewedRunIdRef.
+    viewedRunIdRef.current = selectedRunId;
     setWsError(null);
     let run;
     try {
       run = await api.getRun(selectedRunId);
     } catch {
-      setWsError("Couldn't load that conversation. Try again.");
+      if (viewedRunIdRef.current === selectedRunId) setWsError("Couldn't load that conversation. Try again.");
       return;
     }
+    if (viewedRunIdRef.current !== selectedRunId) return;
     const replayed = turnsFromEvents(run.events);
     if (run.status === "awaiting_approval") {
       const approvalEvent = [...run.events].reverse().find((e: any) => e.type === "approval_requested");
@@ -525,6 +582,8 @@ export default function Home() {
     if (!isDecider || !runId || busy || !socketRef.current) return;
     setWsError(null);
     setBusy(true);
+    activeActionRunIdRef.current = runId;
+    viewedRunIdRef.current = runId;
     socketRef.current.send({ action: "approval", run_id: runId, approved, reason });
   }
 
