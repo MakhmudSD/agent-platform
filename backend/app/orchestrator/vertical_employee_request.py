@@ -37,7 +37,8 @@ Given the draft fields and any policy excerpts, respond with JSON:
   "final_draft": {...the same fields, cleaned up, plus "requester" if provided...},
   "policy_notes": "one sentence noting which policy (if any) applies, or empty string",
   "policy_evaluation": [
-    {"rule": "...", "status": "passed"|"binding"|"outstanding", "evidence": "..."}
+    {"rule": "...", "status": "passed"|"binding"|"outstanding", "evidence": "...", \
+"cap": 1234.0 | null}
   ]
 }
 
@@ -53,6 +54,13 @@ receipt or follow-up item still owed).
 "evidence" must be a short span taken directly from the excerpt text, not a paraphrase or \
 invention. If the excerpts contain no rules relevant to this request, return an empty list \
 rather than inventing one. Never evaluate a rule that isn't stated in the excerpts.
+
+"cap" is the single dollar amount from the excerpt that this specific rule enforces against \
+the draft's amount (e.g. a per-event or per-person reimbursement limit) -- omit it (null) \
+unless the rule is genuinely a dollar cap that applies to this request's amount. A policy \
+excerpt may contain several dollar figures for different purposes (a spending limit vs. an \
+escalation threshold, for instance); pick the one this rule itself states, never a different \
+figure from the same excerpt. Only ever set "cap" on the "binding" rule.
 """
 
 ESCALATION_SYSTEM_PROMPT = """You decide whether an employee request needs escalation to a \
@@ -82,11 +90,20 @@ APPROVAL_SUMMARY_SYSTEM_PROMPT = """You write a short decision-ready brief for a
 approver who will not read the full drafted request or its policy citations -- they will \
 only read this.
 
-Given the draft and the policy rule evaluation, respond with JSON:
+Given the draft, the policy rule evaluation, and whether retrieved policy was actually \
+judged relevant to this request, respond with JSON:
 {"summary": "2-3 plain-language sentences, no bullet points"}
 
 Cover exactly: what's being requested and the amount, and the one thing that matters most \
-for this specific decision -- either the binding policy rule if one exists, or that the \
-request is routine and clears policy cleanly if none does. Do not restate every rule; the \
-approver wants the one fact that would change their decision, not a checklist.
+for this specific decision. Do not restate every rule; the approver wants the one fact that \
+would change their decision, not a checklist.
+
+The policy rule evaluation being empty means one of two different things -- say the correct \
+one, never blur them:
+- Policy WAS found and judged relevant, but raised no rule against this request: say the \
+request is routine and clears policy cleanly.
+- No applicable policy was found for this category at all (policy_relevant is false, or no \
+policy was retrieved): say plainly that no applicable company policy was found for this \
+category, NOT that it clears or passes policy -- those are not the same fact, and an \
+approver deciding without any policy backing needs to know that.
 """

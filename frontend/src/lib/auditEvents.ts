@@ -1,6 +1,5 @@
-// Shared between /history (the full audit trail page) and ApproverDetail's
-// "Trace" sub-tab (the same event stream, scoped to one run, surfaced
-// where a decider is already looking instead of only in a separate tab).
+// Powers ApproverDetail's "Trace" sub-tab -- the run_events stream for one
+// run, surfaced where a decider is already looking.
 export const EVENT_LABELS: Record<string, string> = {
   run_started: "Request received",
   manager_decision: "Decided next step",
@@ -17,6 +16,7 @@ export const EVENT_LABELS: Record<string, string> = {
   approved: "Approved",
   rejected: "Rejected",
   finalized: "Finalized and submitted",
+  token_usage: "Model usage recorded",
 };
 
 export const EVENT_ICONS: Record<string, string> = {
@@ -35,4 +35,5 @@ export const EVENT_ICONS: Record<string, string> = {
   approved: "check_circle",
   rejected: "undo",
   finalized: "task_alt",
+  token_usage: "toll",
 };

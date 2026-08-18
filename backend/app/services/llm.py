@@ -106,5 +106,8 @@ def structured_call(system_prompt: str, user_content: str) -> dict:
                 "output_tokens": usage.candidates_token_count,
                 "total_tokens": usage.total_token_count,
             })
+        events.add_token_usage(
+            usage.prompt_token_count, usage.candidates_token_count, usage.total_token_count,
+        )
 
     return json.loads(response.text)

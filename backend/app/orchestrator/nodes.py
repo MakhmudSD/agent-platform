@@ -22,6 +22,7 @@ duplicate.
 from __future__ import annotations
 
 import json
+import re
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import interrupt
@@ -284,13 +285,39 @@ def _excerpt(text: str) -> str:
 _POLICY_RULE_STATUSES = {"passed", "binding", "outstanding"}
 
 
+_DOLLAR_AMOUNT_RE = re.compile(r"\$([\d,]+(?:\.\d+)?)")
+
+
+def _valid_cap(raw: object, evidence: str) -> float | None:
+    """Same anti-hallucination discipline as the rule/evidence fields: a cap
+    only survives if it's a positive number that actually appears as one of
+    the dollar figures in the (already-verified-traceable) evidence span --
+    catches the model citing a different dollar figure from elsewhere in the
+    excerpt (e.g. an escalation threshold instead of the spending limit this
+    rule states). Parses evidence's own $ figures and checks for an exact
+    numeric match rather than a substring search: substring matching either
+    misses a real match on comma formatting ("$1,500" vs. a model-returned
+    1500.0) or, worse, false-positives on a smaller number that's textually
+    a substring of a larger one ("150" inside "$1,500")."""
+    if not isinstance(raw, (int, float)) or isinstance(raw, bool) or raw <= 0:
+        return None
+    amounts = {float(m.replace(",", "")) for m in _DOLLAR_AMOUNT_RE.findall(evidence)}
+    if float(raw) not in amounts:
+        return None
+    return float(raw)
+
+
 def _valid_policy_evaluation(raw: object, source_text: str) -> list[dict]:
     """Anti-hallucination guard on the model's policy_evaluation output --
     drops any entry whose status isn't one of the three the design defines,
     or whose "evidence" isn't actually traceable to the retrieved excerpt
     text (the model was told to quote, not paraphrase; this catches it
     when it doesn't). At most one "binding" rule survives, matching the
-    design's "one teal element per card" rule."""
+    design's "one teal element per card" rule. "cap" gets the same
+    traceability check against its own evidence span, and is only ever
+    kept on the surviving "binding" rule -- this is what lets the
+    approver-facing cap widget stop guessing a number out of citation
+    text that may not even apply to the request (see AgentVisuals.tsx)."""
     if not isinstance(raw, list):
         return []
     normalized_source = " ".join(source_text.lower().split())
@@ -311,7 +338,10 @@ def _valid_policy_evaluation(raw: object, source_text: str) -> list[dict]:
             if seen_binding:
                 status = "passed"
             seen_binding = True
-        out.append({"rule": rule.strip(), "status": status, "evidence": evidence.strip()})
+        entry = {"rule": rule.strip(), "status": status, "evidence": evidence.strip()}
+        if status == "binding":
+            entry["cap"] = _valid_cap(item.get("cap"), evidence)
+        out.append(entry)
     return out
 
 
@@ -429,7 +459,8 @@ def approval_summary_node(state: OrchestratorState, config: RunnableConfig) -> d
     if routing_decision["routed_to"] == "approver":
         result = structured_call(
             APPROVAL_SUMMARY_SYSTEM_PROMPT,
-            f"Draft: {state['draft']}\nPolicy rule evaluation: {state.get('policy_evaluation', [])}",
+            f"Draft: {state['draft']}\nPolicy rule evaluation: {state.get('policy_evaluation', [])}"
+            f"\npolicy_relevant: {state.get('policy_relevance') == 'relevant'}",
         )
         summary = result.get("summary")
         approval_summary = summary.strip() if isinstance(summary, str) and summary.strip() else None

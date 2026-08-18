@@ -64,23 +64,6 @@ export function comparableDecisions(runs: RunLike[], category: string | undefine
     .slice(0, limit);
 }
 
-// Pulls dollar figures out of the actual retrieved policy excerpt text
-// (backend/app/data/policy_docs/seed_docs.py has real caps like "$3,000" /
-// "$1,500" baked into the policy prose) and returns the smallest one at or
-// above the request amount -- a real regex read of real policy text, not an
-// invented number. Returns null rather than guessing when no cap is found.
-export function extractPolicyCap(excerpts: string[], amount: number | null | undefined): number | null {
-  const amounts = excerpts
-    .join(" ")
-    .match(/\$([\d,]+(?:\.\d+)?)/g)
-    ?.map((m) => Number(m.replace(/[$,]/g, "")))
-    .filter((n) => Number.isFinite(n) && n > 0) ?? [];
-  if (amounts.length === 0) return null;
-  const aboveAmount = amount != null ? amounts.filter((n) => n >= amount) : amounts;
-  const pool = aboveAmount.length > 0 ? aboveAmount : amounts;
-  return Math.min(...pool);
-}
-
 // A real statistical confidence, not a model score: the approve rate among
 // past decided requests in the same category. Returns null (not a fake
 // midpoint like 50%) when there's no history to base it on.

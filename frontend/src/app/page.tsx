@@ -543,7 +543,7 @@ export default function Home() {
   // history to lose.
   if (isDecider) {
     const decided = status === "finalized" || status === "rejected";
-    const decisionNoun = isReviewer ? "review" : "approval";
+    const decisionVerb = isReviewer ? "review" : "approve";
     return (
       <div className="flex min-h-screen bg-app">
         <Sidebar />
@@ -589,9 +589,9 @@ export default function Home() {
           ) : (
             <div className="flex-1 flex items-center justify-center bg-surface text-center px-6">
               <div>
-                <h1 className="text-2xl font-semibold text-ink mb-2">Select a request to {decisionNoun}</h1>
+                <h1 className="text-2xl font-semibold text-ink mb-2">Select a request to {decisionVerb}</h1>
                 <p className="text-text-secondary text-sm max-w-md mx-auto">
-                  Open your <a href="/notifications" className="underline hover:text-ink">notifications</a> to see what's waiting and pick one to {decisionNoun}.
+                  Open your <a href="/notifications" className="underline hover:text-ink">notifications</a> to see what's waiting and pick one to {decisionVerb}.
                 </p>
               </div>
             </div>

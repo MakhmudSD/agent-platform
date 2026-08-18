@@ -37,6 +37,19 @@ trace.set_tracer_provider(_provider)
 tracer = trace.get_tracer("agent-platform")
 
 
+def _log_token_usage(node: str, state: dict, config: dict) -> None:
+    totals = events.pop_token_usage()
+    if not totals["calls"]:
+        return
+    configurable = (config or {}).get("configurable") or {}
+    db, run = configurable.get("db"), configurable.get("run")
+    if db is None or run is None:
+        return
+    from app.orchestrator.audit import log_event
+
+    log_event(db, run, "token_usage", {"node": node, **totals})
+
+
 def instrument_app(app) -> None:
     """Auto-instruments FastAPI: one span per HTTP request."""
     from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -86,6 +99,7 @@ def traced_node(name: str) -> Callable:
                     raise
                 else:
                     span.set_status(Status(StatusCode.OK))
+                    _log_token_usage(name, state, config)
                     events.emit(run_id, {"type": "node_finished", "node": name})
                     return result
                 finally:

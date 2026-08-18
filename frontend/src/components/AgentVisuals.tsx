@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, PolicyCitationCard, PolicyRuleCard, RoutingDecision } from "@/lib/api";
-import { approvalConfidence, comparableDecisions, decisionLatencyLabel, extractPolicyCap } from "@/lib/stats";
+import { approvalConfidence, comparableDecisions, decisionLatencyLabel } from "@/lib/stats";
 
 // The four agent-visual cards this app can build for real from data it
 // actually has (RAG policy citations, run history for comparables/
@@ -286,7 +286,13 @@ export function AgentVisualStack(props: AgentVisualStackProps) {
     api.listRuns().then(setRuns).catch(() => {});
   }, []);
 
-  const cap = extractPolicyCap(policyCitations.map((c) => c.excerpt), draft.amount);
+  // Sourced from the binding rule's own "cap" field (nodes.py's
+  // _valid_policy_evaluation), not regex-guessed off citation text -- that
+  // guess could surface a dollar figure from a policy that doesn't even
+  // apply to this request, or the wrong one of several figures in a policy
+  // that does. No binding rule (including the "no applicable policy was
+  // found" case, where policy_evaluation is empty) means no cap to show.
+  const cap = policyEvaluation.find((r) => r.status === "binding")?.cap ?? null;
   const comparable = comparableDecisions(runs as any, draft.category, excludeRunId);
   const confidence = approvalConfidence(runs as any, draft.category);
 

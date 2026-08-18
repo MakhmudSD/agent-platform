@@ -31,6 +31,7 @@ class PolicyRuleCard(BaseModel):
     rule: str
     status: Literal["passed", "binding", "outstanding"]
     evidence: str
+    cap: float | None = None
 
 
 class RoutingDecisionCard(BaseModel):
