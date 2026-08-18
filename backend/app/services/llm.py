@@ -11,7 +11,7 @@ import json
 from typing import Callable
 
 import google.generativeai as genai
-from google.api_core.exceptions import ResourceExhausted
+from google.api_core.exceptions import ResourceExhausted, ServiceUnavailable
 from langsmith import traceable
 from langsmith.run_helpers import get_current_run_tree
 from tenacity import retry, retry_if_exception_type, stop_after_attempt
@@ -30,18 +30,19 @@ def _ensure_configured() -> None:
         _configured = True
 
 
-# ResourceExhausted (google.api_core.exceptions) is what google.generativeai
-# actually raises for a 429 -- confirmed against the real traceback from the
-# quota wall we hit two sessions ago, not assumed. Retrying on anything else
-# (bad request, auth failure) would just burn 3x the time before failing the
-# same way, so this is deliberately narrow.
+# ResourceExhausted (429, quota) and ServiceUnavailable (503, "the model is
+# currently experiencing high demand") are what google.generativeai actually
+# raises for these -- confirmed against real tracebacks, not assumed. Both
+# are transient server-side conditions a short wait can clear; retrying on
+# anything else (bad request, auth failure) would just burn 3x the time
+# before failing the same way, so this stays deliberately narrow to these two.
 #
-# Wait time comes from the server's own RetryInfo.retryDelay (Google told us
-# 12s and 53s on the two real 429s we've hit), not a fixed exponential curve --
-# a short fixed backoff burns all 3 attempts inside a still-closed quota
-# window and fails anyway, just slower and with 3x the API calls.
+# Wait time comes from the server's own RetryInfo.retryDelay when present
+# (Google told us 12s and 53s on the two real 429s we've hit) -- 503s don't
+# carry that detail, so those fall back to a fixed wait in wait_for_server_
+# retry_delay rather than a token gesture at backoff that fails anyway.
 @retry(
-    retry=retry_if_exception_type(ResourceExhausted),
+    retry=retry_if_exception_type((ResourceExhausted, ServiceUnavailable)),
     wait=wait_for_server_retry_delay,
     stop=stop_after_attempt(3),
     reraise=True,

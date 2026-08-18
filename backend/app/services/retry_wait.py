@@ -1,5 +1,6 @@
 """
-Shared tenacity wait-strategy for Gemini rate-limit retries.
+Shared tenacity wait-strategy for Gemini retries (429 rate limits and 503
+"model currently experiencing high demand" overloads).
 
 Google's REST error body for a 429 embeds its own suggested wait as a
 RetryInfo detail (e.g. {"@type": ".../google.rpc.RetryInfo", "retryDelay":
@@ -7,7 +8,9 @@ RetryInfo detail (e.g. {"@type": ".../google.rpc.RetryInfo", "retryDelay":
 ResourceExhausted.details. Honoring that number is more reliable than a
 fixed exponential curve -- the two real 429s this app has hit came back
 with 12s and 53s suggested delays, either of which a short fixed backoff
-would burn through without the quota window actually reopening.
+would burn through without the quota window actually reopening. 503s carry
+no such detail (there's no per-caller quota window to report), so those
+always take the fixed fallback below.
 """
 from __future__ import annotations
 
@@ -16,8 +19,9 @@ import re
 from google.api_core.exceptions import ResourceExhausted
 
 _RETRY_DELAY_RE = re.compile(r"^([\d.]+)s?$")
-# If a 429 ever arrives without RetryInfo, fall back to something that can
-# actually survive an RPM quota window rather than a token gesture at backoff.
+# If a 429 ever arrives without RetryInfo, or a 503 arrives at all, fall
+# back to something that can actually survive a transient quota or capacity
+# window rather than a token gesture at backoff.
 _FALLBACK_SECONDS = 20.0
 _MAX_SECONDS = 65.0
 
