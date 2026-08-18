@@ -399,6 +399,13 @@ function HomeInner() {
         }
         activeActionRunIdRef.current = null;
         setBusy(false);
+        // A run was just created or advanced -- Sidebar's Recent list
+        // needs to know regardless of forCurrentView, since the run itself
+        // is real either way. Sidebar used to pick this up for free by
+        // remounting on every navigation; now that it persists (see
+        // app/(app)/layout.tsx), nothing else tells it to refetch. Same
+        // event-based refresh notifications already uses (lib/api.ts).
+        window.dispatchEvent(new Event("runs:changed"));
         break;
       case "error":
         if (forCurrentView) setWsError(event.detail);

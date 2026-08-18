@@ -69,6 +69,22 @@ export function Sidebar() {
     setPinnedIds(getPinnedIds(user.id));
   }, [user, isDecider, expanded]);
 
+  // Sidebar now persists across navigation (see app/(app)/layout.tsx)
+  // instead of remounting on every route change -- that remount used to be
+  // the only thing that ever refreshed this list, so starting a new
+  // conversation and browsing away no longer put it in Recent until
+  // something else happened to retrigger the effect above (a page reload,
+  // or toggling the rail). Same fix as notifications: page.tsx dispatches
+  // this the moment a run is created or advances, so Recent updates live
+  // instead of going stale the instant the remount-driven refresh stopped
+  // happening.
+  useEffect(() => {
+    if (!user || isDecider) return;
+    window.addEventListener("runs:changed", refetchRuns);
+    return () => window.removeEventListener("runs:changed", refetchRuns);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, isDecider]);
+
   const visibleRuns = recentRuns.filter((r) => !r.archived);
   const pinnedRuns = visibleRuns.filter((r) => pinnedIds.includes(r.run_id));
   const unpinnedRuns = visibleRuns.filter((r) => !pinnedIds.includes(r.run_id));
