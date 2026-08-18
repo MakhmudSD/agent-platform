@@ -173,7 +173,14 @@ export default function Notifications() {
                             onClick={() => router.push(`/?run=${r.run_id}`)}
                             className="min-w-0 flex-1 text-left"
                           >
-                            <span className="block text-[13.5px] font-medium text-ink truncate">{summary ?? "New request"}</span>
+                            <span className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-[13.5px] font-medium text-ink truncate">{summary ?? "New request"}</span>
+                              {r.draft?.urgent && (
+                                <span className="shrink-0 px-1.5 py-[1px] rounded text-[10px] font-semibold bg-[#F6EAE2] text-warning-strong">
+                                  Urgent
+                                </span>
+                              )}
+                            </span>
                             <span className="block text-[12px] text-text-tertiary mt-0.5">{r.requester_name} · awaiting your decision</span>
                           </button>
                           <div className="shrink-0 flex items-center gap-1">

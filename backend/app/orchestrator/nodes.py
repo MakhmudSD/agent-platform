@@ -363,6 +363,14 @@ def draft_node(state: OrchestratorState, config: RunnableConfig) -> dict:
     )
     final_draft = result.get("final_draft", state["draft"])
     final_draft["requester"] = run.requester_name
+    # Deterministic safety net, same discipline as the manager's retrieval
+    # cap -- never trust the LLM alone to carry a real signal through a
+    # second call untouched. Confirmed live: without this, "urgent" typed by
+    # the requester during intake would silently vanish by the time the
+    # draft reaches the approver, because draft_node's own LLM call
+    # regenerates final_draft from scratch rather than patching it.
+    if state["draft"].get("urgent") and not final_draft.get("urgent"):
+        final_draft["urgent"] = True
     run.draft = final_draft
     policy_evaluation = _valid_policy_evaluation(result.get("policy_evaluation"), policy_excerpt_text)
     log_event(db, run, "draft_finalized_for_review", {
@@ -485,9 +493,10 @@ def approval_summary_node(state: OrchestratorState, config: RunnableConfig) -> d
         "routing_decision": routing_decision, "approval_summary": approval_summary,
     })
     destination = "review" if routing_decision["routed_to"] == "reviewer" else "approval"
+    urgent_prefix = "Urgent -- " if state["draft"].get("urgent") else ""
     notify(
         db, run,
-        f"Awaiting {destination}: {run.requester_name}'s request "
+        f"{urgent_prefix}Awaiting {destination}: {run.requester_name}'s request "
         f"({state['draft'].get('category', 'request')}, ${state['draft'].get('amount', '?')}) needs your review.",
         type="needs_review" if routing_decision["routed_to"] == "reviewer" else "needs_approval",
         target_role=routing_decision["routed_to"],

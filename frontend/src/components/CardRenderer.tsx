@@ -81,7 +81,7 @@ function ApprovalCard(props: ApprovalCardProps) {
             {Object.entries(card.draft).map(([key, value]) => (
               <div key={key} className="contents">
                 <dt className="text-text-tertiary capitalize">{key.replace("_", " ")}</dt>
-                <dd className="text-ink font-medium">{String(value)}</dd>
+                <dd className="text-ink font-medium">{typeof value === "boolean" ? (value ? "Yes" : "No") : String(value)}</dd>
               </div>
             ))}
           </dl>

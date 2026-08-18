@@ -575,6 +575,11 @@ export default function Home() {
                 <span className="text-[15px] font-semibold text-ink tracking-[-.01em] truncate">
                   {(latestApprovalCard.card as any).draft?.category ?? "Request"}
                 </span>
+                {(latestApprovalCard.card as any).draft?.urgent && (
+                  <span className="shrink-0 px-2 py-[3px] rounded-md bg-[#F6EAE2] text-[11px] font-semibold text-warning-strong">
+                    Urgent
+                  </span>
+                )}
                 {runId && <span className="font-mono text-[12.5px] text-text-quaternary shrink-0">REQ-{runId.slice(0, 4).toUpperCase()}</span>}
               </div>
               <div className="flex items-center gap-3 shrink-0">
@@ -633,6 +638,11 @@ export default function Home() {
               <span className="text-[15px] font-semibold text-ink tracking-[-.01em] truncate">
                 {liveDraft?.category ?? "New request"}
               </span>
+              {liveDraft?.urgent && (
+                <span className="shrink-0 px-2 py-[3px] rounded-md bg-[#F6EAE2] text-[11px] font-semibold text-warning-strong">
+                  Urgent
+                </span>
+              )}
               {runId && <span className="font-mono text-[12.5px] text-text-quaternary shrink-0">REQ-{runId.slice(0, 4).toUpperCase()}</span>}
             </div>
             <div className="flex items-center gap-3 shrink-0">

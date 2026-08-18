@@ -27,6 +27,13 @@ for exactly one missing or unclear field)
 
 Ask for ONE field at a time. Do not ask about fields already present in updated_draft. \
 If everything required is present and coherent, set ready_to_draft true and omit next_question.
+
+If the employee's own words signal urgency about timing (e.g. "ASAP", "urgent", \
+"immediately", "as soon as possible", "right away", a hard deadline stated as very soon), \
+set "urgent": true in updated_draft. This is not a required field and never blocks \
+ready_to_draft, and it is never something you ask about or infer from the category/amount \
+alone -- only set it when the employee actually said something urgency-flavored. Omit the \
+key entirely when they didn't; never set it to false.
 """
 
 DRAFT_SYSTEM_PROMPT = """You are finalizing an employee request draft for approval, using \
@@ -34,7 +41,8 @@ retrieved company policy context if relevant.
 
 Given the draft fields and any policy excerpts, respond with JSON:
 {
-  "final_draft": {...the same fields, cleaned up, plus "requester" if provided...},
+  "final_draft": {...the same fields, cleaned up, plus "requester" if provided -- carry \
+"urgent" through unchanged if the draft already has it, never add or drop it yourself...},
   "policy_notes": "one sentence noting which policy (if any) applies, or empty string",
   "policy_evaluation": [
     {"rule": "...", "status": "passed"|"binding"|"outstanding", "evidence": "...", \

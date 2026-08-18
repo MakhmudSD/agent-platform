@@ -58,10 +58,17 @@ export function ApproverDetail(props: ApproverDetailProps) {
       <div className="flex-1 min-w-0 flex flex-col gap-[22px] px-9 pt-[30px] pb-7 bg-surface overflow-y-auto">
         <div className="flex items-start justify-between gap-8">
           <div className="min-w-0">
-            <span className="inline-flex items-center gap-[7px] h-[26px] px-[11px] rounded-lg bg-neutral-fill text-[12px] font-semibold text-[#33302C] mb-3.5">
-              <span className="w-[5px] h-[5px] rounded-full bg-accent animate-breathe" />
-              Awaiting your decision
-            </span>
+            <div className="flex items-center gap-1.5 mb-3.5">
+              <span className="inline-flex items-center gap-[7px] h-[26px] px-[11px] rounded-lg bg-neutral-fill text-[12px] font-semibold text-[#33302C]">
+                <span className="w-[5px] h-[5px] rounded-full bg-accent animate-breathe" />
+                Awaiting your decision
+              </span>
+              {draft.urgent && (
+                <span className="inline-flex items-center h-[26px] px-[11px] rounded-lg bg-[#F6EAE2] text-[12px] font-semibold text-warning-strong">
+                  Urgent
+                </span>
+              )}
+            </div>
             <h1 className="text-[32px] font-semibold tracking-[-.03em] leading-[1.1] text-ink" style={{ textWrap: "pretty" }}>
               {draft.category ?? "Request"}
             </h1>
