@@ -195,6 +195,11 @@ class RunFeedback(Base):
     rating = Column(Boolean, nullable=False)  # True = thumbs up, False = thumbs down
     note = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=_now)
+    # Admin's response, if any -- see routes/admin.py's reply_to_feedback.
+    # Free-standing text, not another table: one admin reply per feedback
+    # row is the whole feature asked for, not a threaded conversation.
+    admin_reply = Column(Text, nullable=True)
+    admin_reply_at = Column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         Index("ix_run_feedback_run_id_user_id", "run_id", "user_id", unique=True),

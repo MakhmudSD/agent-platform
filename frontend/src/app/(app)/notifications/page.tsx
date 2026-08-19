@@ -13,6 +13,7 @@ const TYPE_ICONS: Record<NotificationType, string> = {
   needs_review: "fact_check",
   approved: "check_circle",
   rejected: "undo",
+  feedback_reply: "forum",
 };
 
 // Color-coded per type instead of one flat gray icon for every row --
@@ -25,6 +26,7 @@ const TYPE_COLORS: Record<NotificationType, string> = {
   needs_review: "bg-[#EDEAFB] text-[#5B4FC4]",
   approved: "bg-accent-tint text-accent",
   rejected: "bg-[#F6EAE2] text-warning-strong",
+  feedback_reply: "bg-[#EDEAFB] text-[#5B4FC4]",
 };
 
 type RunSummary = {

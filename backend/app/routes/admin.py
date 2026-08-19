@@ -12,6 +12,7 @@ what didn't already exist: user management.
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field
@@ -22,6 +23,7 @@ from app.core.deps import require_role
 from app.core.security import hash_password
 from app.db.models import Run, RunEvent, RunFeedback, User, UserRole
 from app.db.session import get_db
+from app.orchestrator.audit import notify
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -131,9 +133,50 @@ def list_feedback(user: User = Depends(require_role("admin")), db: Session = Dep
             "run_status": run.status.value,
             "run_requester_name": run.requester_name,
             "run_category": (run.draft or {}).get("category"),
+            "admin_reply": fb.admin_reply,
+            "admin_reply_at": fb.admin_reply_at.isoformat() if fb.admin_reply_at else None,
         }
         for fb, run, rater in rows
     ]
+
+
+class ReplyToFeedbackRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+
+
+@router.post("/feedback/{feedback_id}/reply")
+def reply_to_feedback(
+    feedback_id: str, body: ReplyToFeedbackRequest,
+    user: User = Depends(require_role("admin")), db: Session = Depends(get_db),
+):
+    """
+    Stores the reply on the feedback row and notifies whoever left the
+    feedback -- reuses the same notify() every other run-lifecycle
+    notification goes through (orchestrator/audit.py), rather than a
+    second, admin-only notification path.
+    """
+    fb = db.get(RunFeedback, feedback_id)
+    if fb is None:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    run = db.get(Run, fb.run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    fb.admin_reply = body.message
+    fb.admin_reply_at = datetime.now(timezone.utc)
+    db.commit()
+
+    notify(
+        db, run, f"Admin replied to your feedback: {body.message}",
+        type="feedback_reply", user_id=fb.user_id,
+    )
+    db.commit()
+
+    return {
+        "id": fb.id,
+        "admin_reply": fb.admin_reply,
+        "admin_reply_at": fb.admin_reply_at.isoformat(),
+    }
 
 
 def _cost_usd(input_tokens: int, output_tokens: int, reasoning_tokens: int) -> float:

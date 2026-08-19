@@ -33,7 +33,7 @@ export type Card = ClarifyingQuestionCard | ApprovalRequestCard | FinalConfirmat
 
 export type RunResponse = { run_id: string; status: string; card: Card };
 
-export type NotificationType = "needs_approval" | "needs_review" | "approved" | "rejected";
+export type NotificationType = "needs_approval" | "needs_review" | "approved" | "rejected" | "feedback_reply";
 export type Notification = {
   id: string;
   run_id: string;
@@ -69,6 +69,8 @@ export type AdminFeedback = {
   run_status: string;
   run_requester_name: string;
   run_category: string | null;
+  admin_reply: string | null;
+  admin_reply_at: string | null;
 };
 
 export type Folder = { id: string; name: string; created_at: string; run_count: number };
@@ -183,6 +185,9 @@ export const api = {
   getUsage: () => get<UsageReport>("/admin/usage"),
 
   listFeedback: () => get<AdminFeedback[]>("/admin/feedback"),
+
+  replyToFeedback: (id: string, message: string) =>
+    post<{ id: string; admin_reply: string; admin_reply_at: string }>(`/admin/feedback/${id}/reply`, { message }),
 
   // Dispatches a DOM event after marking read -- the rail badge
   // (Sidebar.tsx) and this page each fetch /notifications independently,

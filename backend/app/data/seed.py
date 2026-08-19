@@ -116,6 +116,17 @@ def _migrate_runs_folder_columns() -> None:
         conn.commit()
 
 
+def _migrate_run_feedback_admin_reply() -> None:
+    # Same additive pattern as the other _migrate_* functions -- run_feedback
+    # itself already existed (create_all() made it), admin_reply/
+    # admin_reply_at were added after. Existing rows get NULL (no reply
+    # yet), nothing backfilled or guessed.
+    with engine.connect() as conn:
+        conn.execute(sql_text("ALTER TABLE run_feedback ADD COLUMN IF NOT EXISTS admin_reply TEXT"))
+        conn.execute(sql_text("ALTER TABLE run_feedback ADD COLUMN IF NOT EXISTS admin_reply_at TIMESTAMPTZ"))
+        conn.commit()
+
+
 def _seed_demo_accounts(db) -> None:
     for account in DEMO_ACCOUNTS:
         if db.query(User).filter_by(email=account["email"]).first() is not None:
@@ -140,6 +151,7 @@ def main():
     _migrate_runs_routed_to()
     _migrate_notification_columns()
     _migrate_runs_folder_columns()  # folders table itself comes from create_all() above
+    _migrate_run_feedback_admin_reply()  # run_feedback table itself comes from create_all() above
 
     db = SessionLocal()
     try:

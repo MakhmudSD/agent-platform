@@ -12,18 +12,20 @@ const TYPE_LABELS: Record<NotificationType, { label: string; description: string
   needs_review: { label: "Needs your review", description: "A request was routed to the specialist review queue." },
   approved: { label: "Your request was approved", description: "A request you filed was approved." },
   rejected: { label: "Your request was sent back", description: "A request you filed was rejected." },
+  feedback_reply: { label: "Admin replied to your feedback", description: "An admin responded to a thumbs up/down you left on a conversation." },
 };
 
 // Which types are even possible for this role -- an approver never gets
 // a "your request was approved" notification about someone else's
 // request, so there's nothing to toggle for a type that can't fire for
-// them. Admin sees all four since /notifications gives them every row
-// unfiltered.
+// them. Admin sees all five since /notifications gives them every row
+// unfiltered. feedback_reply applies to every role since anyone can leave
+// conversation feedback (ConversationFeedback.tsx isn't role-gated).
 function typesForRole(role: string | undefined): NotificationType[] {
-  if (role === "admin") return ["needs_approval", "needs_review", "approved", "rejected"];
-  if (role === "approver") return ["needs_approval"];
-  if (role === "reviewer") return ["needs_review"];
-  return ["approved", "rejected"];
+  if (role === "admin") return ["needs_approval", "needs_review", "approved", "rejected", "feedback_reply"];
+  if (role === "approver") return ["needs_approval", "feedback_reply"];
+  if (role === "reviewer") return ["needs_review", "feedback_reply"];
+  return ["approved", "rejected", "feedback_reply"];
 }
 
 // Scope per the PM/marketing consult: a single page, one section, toggles
