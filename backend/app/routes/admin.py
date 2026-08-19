@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.deps import require_role
 from app.core.security import hash_password
-from app.db.models import RunEvent, User, UserRole
+from app.db.models import Run, RunEvent, RunFeedback, User, UserRole
 from app.db.session import get_db
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -100,6 +100,40 @@ def delete_user(user_id: str, user: User = Depends(require_role("admin")), db: S
     db.delete(target)
     db.commit()
     return {"deleted": True}
+
+
+@router.get("/feedback")
+def list_feedback(user: User = Depends(require_role("admin")), db: Session = Depends(get_db)):
+    """
+    Every thumbs up/down left on a resolved conversation (ConversationFeedback.tsx,
+    one row per run+rater via POST /runs/{id}/feedback) -- previously only
+    queryable by hitting Postgres directly, same gap /admin/usage closed for
+    token spend. `note` is in the schema but no UI writes it yet, so it's
+    null on every row today; still returned since a future feedback form
+    wouldn't need a backend change to show up here.
+    """
+    rows = (
+        db.query(RunFeedback, Run, User)
+        .join(Run, RunFeedback.run_id == Run.id)
+        .join(User, RunFeedback.user_id == User.id)
+        .order_by(RunFeedback.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": fb.id,
+            "run_id": fb.run_id,
+            "rating": fb.rating,
+            "note": fb.note,
+            "created_at": fb.created_at.isoformat(),
+            "rater_name": rater.name,
+            "rater_role": rater.role.value,
+            "run_status": run.status.value,
+            "run_requester_name": run.requester_name,
+            "run_category": (run.draft or {}).get("category"),
+        }
+        for fb, run, rater in rows
+    ]
 
 
 def _cost_usd(input_tokens: int, output_tokens: int, reasoning_tokens: int) -> float:

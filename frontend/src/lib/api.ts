@@ -58,6 +58,19 @@ export const ROLE_LABELS: Record<Role, string> = {
 
 export type AdminUser = { id: string; email: string; name: string; role: Role; created_at: string };
 
+export type AdminFeedback = {
+  id: string;
+  run_id: string;
+  rating: boolean;
+  note: string | null;
+  created_at: string;
+  rater_name: string;
+  rater_role: Role;
+  run_status: string;
+  run_requester_name: string;
+  run_category: string | null;
+};
+
 export type Folder = { id: string; name: string; created_at: string; run_count: number };
 
 export type Attachment = { filename: string; url: string; size: number };
@@ -168,6 +181,8 @@ export const api = {
   deleteUser: (id: string) => del<{ deleted: boolean }>(`/admin/users/${id}`),
 
   getUsage: () => get<UsageReport>("/admin/usage"),
+
+  listFeedback: () => get<AdminFeedback[]>("/admin/feedback"),
 
   // Dispatches a DOM event after marking read -- the rail badge
   // (Sidebar.tsx) and this page each fetch /notifications independently,

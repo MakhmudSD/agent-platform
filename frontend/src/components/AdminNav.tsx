@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { href: "/admin", label: "Overview", icon: "space_dashboard" },
   { href: "/admin/users", label: "Users", icon: "group" },
   { href: "/admin/requests", label: "Requests", icon: "receipt_long" },
+  { href: "/admin/feedback", label: "Feedback", icon: "thumb_up" },
 ];
 
 export function AdminNav() {

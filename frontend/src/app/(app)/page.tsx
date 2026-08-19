@@ -772,9 +772,9 @@ function HomeInner() {
             <div className="min-h-full flex items-center justify-center px-[34px] py-14">
               <div className="w-full max-w-2xl">
                 <div className="text-center mb-6">
-                  <h1 className="text-[26px] font-semibold text-ink mb-2.5">What do you need approved?</h1>
+                  <h1 className="text-[26px] font-semibold text-ink mb-2.5">Company policy, already checked.</h1>
                   <p className="text-text-secondary text-sm max-w-md mx-auto">
-                    Describe your request in plain language. I'll ask what's missing, check company policy, and route it for approval.
+                    Tell me what you need approved. I'll find the relevant policy, catch anything that needs a specialist's eyes, and route it -- so nobody has to read the handbook to find out.
                   </p>
                 </div>
 
