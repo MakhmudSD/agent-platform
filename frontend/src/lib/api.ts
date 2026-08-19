@@ -56,9 +56,30 @@ export const ROLE_LABELS: Record<Role, string> = {
   admin: "Admin",
 };
 
+export type AdminUser = { id: string; email: string; name: string; role: Role; created_at: string };
+
 export type Folder = { id: string; name: string; created_at: string; run_count: number };
 
 export type Attachment = { filename: string; url: string; size: number };
+
+export type UsageRow = {
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  cached_tokens: number;
+  reasoning_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+  cost_krw: number;
+};
+export type UsageReport = {
+  model: string;
+  pricing_usd_per_million: { input: number; output: number };
+  krw_per_usd: number;
+  totals: UsageRow;
+  by_node: (UsageRow & { node: string })[];
+  by_day: (UsageRow & { day: string })[];
+};
 
 // credentials: "include" on every call -- the backend sets an httpOnly
 // session cookie (routes/auth.py) and every protected route reads it back;
@@ -136,7 +157,17 @@ export const api = {
 
   listNotifications: () => get<Notification[]>("/notifications"),
 
-  listUsers: () => get<{ id: string; email: string; name: string; role: Role; created_at: string }[]>("/admin/users"),
+  listUsers: () => get<AdminUser[]>("/admin/users"),
+
+  createUser: (email: string, name: string, password: string, role: Role) =>
+    post<AdminUser>("/admin/users", { email, name, password, role }),
+
+  updateUser: (id: string, body: { name?: string; role?: Role }) =>
+    patch<AdminUser>(`/admin/users/${id}`, body),
+
+  deleteUser: (id: string) => del<{ deleted: boolean }>(`/admin/users/${id}`),
+
+  getUsage: () => get<UsageReport>("/admin/usage"),
 
   // Dispatches a DOM event after marking read -- the rail badge
   // (Sidebar.tsx) and this page each fetch /notifications independently,

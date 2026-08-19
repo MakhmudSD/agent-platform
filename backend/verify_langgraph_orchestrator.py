@@ -79,7 +79,7 @@ def build_structured_call_mock(manager_decide, relevance_sequence, gather_sequen
     relevance_iter = iter(relevance_sequence)
     gather_iter = iter(gather_sequence)
 
-    def _mock(system_prompt: str, user_content: str) -> dict:
+    def _mock(system_prompt: str, user_content: str, response_schema: dict | None = None) -> dict:
         if system_prompt == MANAGER_SYSTEM_PROMPT:
             return manager_decide(json.loads(user_content))
         if system_prompt == GATHER_SYSTEM_PROMPT:

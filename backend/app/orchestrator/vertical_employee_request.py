@@ -42,6 +42,17 @@ today's date (given to you below as the current date) and set "urgent": true. Ne
 a question you already asked in the same or nearly the same words; if the employee's last \
 reply didn't resolve it, ask about the SAME missing field from a different, more specific \
 angle (e.g. offer a concrete option) instead of restating it.
+
+"category" is free text (this app has no fixed category list), but it feeds both the \
+sidebar's request list and the policy search query, so wording drift matters: two requests \
+for the same kind of expense must produce the same category string, not near-duplicates like \
+"Office Supplies" vs "office supplies" vs "Supplies". Always write it in Title Case, as a \
+short noun phrase (2-4 words), matching the plainest common name for the expense type -- \
+prefer one of these when it genuinely fits: "Travel & Conference", "Software & Subscription", \
+"Equipment & Hardware", "Client Entertainment & Meals", "Office Supplies", "Transportation". \
+If none fit, write your own concise Title Case category rather than forcing a bad match -- but \
+reuse the exact same string you or the employee already used earlier in this conversation for \
+the same kind of expense, never a rephrasing of it.
 """
 
 DRAFT_SYSTEM_PROMPT = """You are finalizing an employee request draft for approval, using \
@@ -50,7 +61,10 @@ retrieved company policy context if relevant.
 Given the draft fields and any policy excerpts, respond with JSON:
 {
   "final_draft": {...the same fields, cleaned up, plus "requester" if provided -- carry \
-"urgent" through unchanged if the draft already has it, never add or drop it yourself...},
+"urgent" through unchanged if the draft already has it, never add or drop it yourself; carry \
+"category" through byte-for-byte unchanged too, since it already went through intake's own \
+Title Case/consistency rules and re-deriving it here is exactly how the same expense type \
+ends up with two different category strings across two requests...},
   "policy_notes": "one sentence noting which policy (if any) applies, or empty string",
   "policy_evaluation": [
     {"rule": "...", "status": "passed"|"binding"|"outstanding", "evidence": "...", \

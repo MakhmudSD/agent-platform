@@ -189,9 +189,14 @@ export function CostCapVisual(props: { amount: number; cap: number }) {
     <div className={CARD}>
       <div className={HEADER}>
         <span className={TITLE}>Amount vs. policy cap</span>
-        <span className={META}>cap ${cap.toLocaleString()}</span>
+        <span className={META}>${amount.toLocaleString()} of ${cap.toLocaleString()}</span>
       </div>
-      <div className="h-[9px] rounded-full bg-neutral-fill-2 overflow-hidden">
+      {/* Meter spec: fill carries severity (accent -> warning), track is a
+          lighter step of that same hue rather than a neutral gray, so the
+          state (within cap vs. over) reads across the whole bar, not just
+          the fill -- the value itself is also in the header text above,
+          never gated behind reading the fill's pixel width. */}
+      <div className={`h-[9px] rounded-full overflow-hidden ${overCap ? "bg-[#F6EAE2]" : "bg-accent-tint"}`}>
         <span
           className={`block h-[9px] rounded-full ${overCap ? "bg-warning-strong" : "bg-accent"}`}
           style={{ width: `${Math.min(100, (amount / cap) * 100)}%` }}
@@ -218,7 +223,16 @@ export function LikelyOutcomeVisual(props: { confidence: { approved: number; tot
         className="relative h-2.5 rounded-full"
         style={{ background: "linear-gradient(90deg,#EAE1D2 0%,#CFE3DD 55%,#0E7A68 100%)" }}
       >
-        <span className="absolute top-[-7px] w-0.5 h-6 rounded bg-ink" style={{ left: `${confidence.pct}%` }} />
+        {/* End-marker carries a 2px surface ring: the ink needle measures
+            only 3.4:1 against the gradient's teal end (vs. 13+:1 at the
+            beige/mid stops), so without the ring it nearly falls out of
+            the "legible mark" band exactly where the gauge reads as most
+            confident -- the ring is what keeps it a mark, not a shadow of
+            one, across the whole track. */}
+        <span
+          className="absolute top-[-7px] w-0.5 h-6 rounded bg-ink ring-2 ring-card"
+          style={{ left: `${confidence.pct}%` }}
+        />
       </div>
       <div className="flex justify-between mt-3 text-[12.5px] text-text-quaternary">
         <span>Sent back</span><span>Approved</span>

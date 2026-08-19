@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { NotificationType, ROLE_LABELS } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -102,12 +101,6 @@ export default function Settings() {
             })}
           </div>
 
-          {user.role === "admin" && (
-            <p className="mt-6 text-[13px] text-text-tertiary">
-              Role assignment is a security setting, not a preference -- manage it on the{" "}
-              <Link href="/admin" className="underline hover:text-ink">admin dashboard</Link> instead.
-            </p>
-          )}
         </div>
       </div>
     </div>

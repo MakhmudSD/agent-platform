@@ -60,6 +60,18 @@ Respond with JSON only:
 {"next": "intake"|"policy_research"|"draft", "reasoning": "one sentence, specific to the state you were given"}
 """
 
+# Structural backstop for the manager's routing decision, on top of (not
+# instead of) the "unrecognized target -> default to intake" guard below --
+# see structured_call's own docstring for why both layers exist.
+_MANAGER_ROUTE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "next": {"type": "string", "enum": ["intake", "policy_research", "draft"]},
+        "reasoning": {"type": "string"},
+    },
+    "required": ["next", "reasoning"],
+}
+
 RELEVANCE_SYSTEM_PROMPT = """You judge whether retrieved company policy excerpts are \
 relevant enough to draft an employee request with confidence, or whether the search should \
 be retried with a different query.
@@ -106,7 +118,7 @@ def manager_node(state: OrchestratorState, config: RunnableConfig) -> dict:
         "policy_relevance": state.get("policy_relevance"),
         "status": state["status"],
     }
-    result = structured_call(MANAGER_SYSTEM_PROMPT, json.dumps(context))
+    result = structured_call(MANAGER_SYSTEM_PROMPT, json.dumps(context), response_schema=_MANAGER_ROUTE_SCHEMA)
     next_node = result.get("next", "intake")
     reasoning = result.get("reasoning", "")
 
@@ -372,9 +384,27 @@ def draft_node(state: OrchestratorState, config: RunnableConfig) -> dict:
     run.status = RunStatus.DRAFTING
     log_event(db, run, "state_transition", {"to": RunStatus.DRAFTING.value})
 
-    policy_excerpt_text = "\n\n".join(
-        f"[{p['title']}]\n{p['text']}" for p in state["retrieved_policies"]
-    ) or "(no matching policy found)"
+    # Verified against a real run (f8e78a51): retrieval scored ~0.033 twice
+    # -- essentially noise -- policy_research correctly judged both
+    # "not_relevant", the manager hit the retry cap and routed to draft
+    # anyway (its own contract), and draft_node used to hand the model
+    # those excerpts regardless of that judgment. The model then extracted
+    # a real-looking "passed" rule from a document about an unrelated
+    # category and approval_summary told the approver the request "clears
+    # all policy requirements cleanly" -- true of the rule it saw, false
+    # about there being an applicable policy at all. Fix is deterministic,
+    # not a prompt instruction to maybe ignore the excerpts: if retrieval
+    # was never judged relevant, draft_node doesn't see the excerpt text in
+    # the first place, so there's nothing for the model to extract a rule
+    # from. "Never trust the LLM alone" is this file's own rule elsewhere
+    # (final_draft's urgent flag, policy_evaluation's evidence/cap
+    # validation) -- this is the same discipline applied one step earlier.
+    policy_was_relevant = state.get("policy_relevance") == "relevant"
+    policy_excerpt_text = (
+        "\n\n".join(f"[{p['title']}]\n{p['text']}" for p in state["retrieved_policies"])
+        if policy_was_relevant and state["retrieved_policies"]
+        else "(no matching policy found)"
+    )
     result = structured_call(
         DRAFT_SYSTEM_PROMPT,
         f"Draft fields: {state['draft']}\nRequester: {run.requester_name}\n\n"
@@ -417,6 +447,22 @@ def draft_node(state: OrchestratorState, config: RunnableConfig) -> dict:
 
 _ROUTED_TO_VALUES = {"approver", "reviewer"}
 _CONFIDENCE_VALUES = {"high", "medium", "low"}
+
+# Same structural-backstop discipline as _MANAGER_ROUTE_SCHEMA -- routed_to
+# controls who is authorized to decide this request, the highest-stakes
+# field in this app, so it gets the same enum guarantee rather than relying
+# on _valid_routing_decision's post-hoc default alone.
+_ROUTING_DECISION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "routed_to": {"type": "string", "enum": ["approver", "reviewer"]},
+        "reviewer_category": {"type": "string", "enum": ["finance", "legal", "it"]},
+        "reason": {"type": "string"},
+        "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+        "triggered_rule": {"type": "string"},
+    },
+    "required": ["routed_to", "reason", "confidence"],
+}
 
 
 def _valid_routing_decision(raw: object) -> dict:
@@ -463,6 +509,7 @@ def escalation_routing_node(state: OrchestratorState, config: RunnableConfig) ->
     result = structured_call(
         ESCALATION_SYSTEM_PROMPT,
         f"Draft: {state['draft']}\nPolicy rule evaluation: {policy_evaluation}",
+        response_schema=_ROUTING_DECISION_SCHEMA,
     )
     routing_decision = _valid_routing_decision(result)
     run.routed_to = routing_decision["routed_to"]

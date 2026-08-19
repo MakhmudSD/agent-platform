@@ -234,6 +234,14 @@ function HomeInner() {
   // don't themselves need to trigger a render.
   const activeActionRunIdRef = useRef<string | null>(null);
   const viewedRunIdRef = useRef<string | null>(null);
+  // Guards the /chat -> /?draft= handoff effect below against firing twice
+  // for the same draft. React 18 StrictMode double-invokes effects on
+  // mount in dev; the effect's own `turns.length > 0` check can't catch
+  // the second invocation because no render happens between the two
+  // calls, so both see the same empty `turns` closure and both send. A
+  // ref is mutated synchronously and shared across both invocations,
+  // unlike state, so it actually blocks the second one.
+  const draftConsumedRef = useRef(false);
   // Guards the routing visual to one appearance per run -- the backend
   // event it's keyed off (clarifying_question_asked) can fire once per
   // missing field, but "here's where this goes next" is only news once.
@@ -270,9 +278,10 @@ function HomeInner() {
   // effect above has finished connecting. Strips the param after consuming
   // it so a refresh doesn't resend the same request.
   useEffect(() => {
-    if (isDecider || runId || turns.length > 0) return;
+    if (isDecider || runId || turns.length > 0 || draftConsumedRef.current) return;
     const draft = searchParams.get("draft");
     if (!draft) return;
+    draftConsumedRef.current = true;
     handleSend(draft);
     router.replace("/");
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -56,9 +56,16 @@ def _get_run_or_404(db: Session, run_id: str) -> Run:
 
 
 def _require_owner_or_admin(run: Run, user: User) -> None:
-    # Legacy rows created before auth existed have no user_id -- treat them
-    # as unowned rather than locking them out entirely.
-    if run.user_id is not None and run.user_id != user.id and user.role.value != "admin":
+    # NULL user_id is NOT "unowned, anyone may act on it" -- it's also what
+    # a run ends up with the moment its owner is deleted (admin.py's
+    # delete_user relies on the FK's ON DELETE SET NULL). Treating NULL as
+    # open would let any authenticated user, of any role, take over a
+    # deleted user's in-flight runs. Only admin can act on an ownerless run.
+    if run.user_id is None:
+        if user.role.value != "admin":
+            raise HTTPException(status_code=403, detail="Not your request")
+        return
+    if run.user_id != user.id and user.role.value != "admin":
         raise HTTPException(status_code=403, detail="Not your request")
 
 

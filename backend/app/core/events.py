@@ -52,7 +52,7 @@ def emit(run_id: str | None, event: dict) -> None:
 def set_current(run_id: str | None, node: str | None) -> None:
     _current.run_id = run_id
     _current.node = node
-    _current.token_totals = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "calls": 0}
+    _current.token_totals = {"input_tokens": 0, "output_tokens": 0, "cached_tokens": 0, "total_tokens": 0, "calls": 0}
 
 
 def clear_current() -> None:
@@ -73,19 +73,20 @@ def current_node() -> str | None:
 # structured_call() already has usage_metadata in hand for free (see its
 # docstring), this just lets traced_node() collect it per-node without
 # threading a db/run handle through every LLM call site.
-def add_token_usage(input_tokens: int, output_tokens: int, total_tokens: int) -> None:
+def add_token_usage(input_tokens: int, output_tokens: int, cached_tokens: int, total_tokens: int) -> None:
     totals = getattr(_current, "token_totals", None)
     if totals is None:
         return
     totals["input_tokens"] += input_tokens
     totals["output_tokens"] += output_tokens
+    totals["cached_tokens"] += cached_tokens
     totals["total_tokens"] += total_tokens
     totals["calls"] += 1
 
 
 def pop_token_usage() -> dict:
     totals = getattr(_current, "token_totals", None) or {
-        "input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "calls": 0,
+        "input_tokens": 0, "output_tokens": 0, "cached_tokens": 0, "total_tokens": 0, "calls": 0,
     }
-    _current.token_totals = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "calls": 0}
+    _current.token_totals = {"input_tokens": 0, "output_tokens": 0, "cached_tokens": 0, "total_tokens": 0, "calls": 0}
     return totals

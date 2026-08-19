@@ -6,8 +6,8 @@ import { api, AuthUser } from "@/lib/api";
 type AuthContextValue = {
   user: AuthUser | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, name: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<AuthUser>;
+  signup: (email: string, name: string, password: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
 };
 
@@ -24,11 +24,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function login(email: string, password: string) {
     const loggedIn = await api.login(email, password);
     setUser(loggedIn);
+    return loggedIn;
   }
 
   async function signup(email: string, name: string, password: string) {
     const created = await api.signup(email, name, password);
     setUser(created);
+    return created;
   }
 
   async function logout() {

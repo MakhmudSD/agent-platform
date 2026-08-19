@@ -11,7 +11,7 @@ from app.routes.notifications import router as notifications_router
 from app.routes.runs import UPLOAD_ROOT, router as runs_router
 from app.routes.ws_runs import router as ws_runs_router
 
-app = FastAPI(title="Agent Platform — Employee Request Assistant")
+app = FastAPI(title="AX Platform")
 
 settings = get_settings()
 origins = [o.strip() for o in settings.allowed_origins.split(",") if o.strip()]

@@ -22,12 +22,11 @@ export default function LoginPage() {
     setError(null);
     setBusy(true);
     try {
-      if (mode === "login") {
-        await login(email, password);
-      } else {
-        await signup(email, name, password);
-      }
-      router.push("/");
+      // Admin gets its own dedicated console (see app/admin/layout.tsx) --
+      // sent straight there rather than into the requester/decider app,
+      // which it doesn't otherwise use.
+      const loggedIn = mode === "login" ? await login(email, password) : await signup(email, name, password);
+      router.push(loggedIn.role === "admin" ? "/admin" : "/");
     } catch (err: any) {
       setError(err.message || "Something went wrong.");
     } finally {
@@ -40,7 +39,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center gap-2 mb-8">
           <Logo size={40} />
-          <h1 className="text-lg font-semibold text-ink">Request Assistant</h1>
+          <h1 className="text-lg font-semibold text-ink">AX Platform</h1>
           <p className="text-sm text-text-secondary">
             {mode === "login" ? "Sign in to continue" : "Create an account"}
           </p>

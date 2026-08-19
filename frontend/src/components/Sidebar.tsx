@@ -106,8 +106,6 @@ export function Sidebar() {
     });
   }
 
-  const role = user?.role;
-
   useEffect(() => {
     if (!user) return;
     const refetch = () => api.listNotifications().then(setNotifications).catch(() => {});
@@ -144,7 +142,7 @@ export function Sidebar() {
         <div className="flex items-center justify-between mb-4 px-1">
           <Link href="/" className="flex items-center gap-2 min-w-0">
             <Logo size={28} />
-            <span className="text-[13.5px] font-semibold text-ink truncate">Request Assistant</span>
+            <span className="text-[13.5px] font-semibold text-ink truncate">AX Platform</span>
           </Link>
           <button
             onClick={toggleExpanded}
@@ -219,10 +217,11 @@ export function Sidebar() {
 
       {user && (
         <div className={`mt-auto flex gap-2 ${expanded ? "flex-col" : "flex-col items-center"}`}>
+          {/* No "Admin dashboard" link here anymore -- admin has its own
+              console (app/admin/*) with its own nav and never renders this
+              Sidebar at all (see (app)/layout.tsx's redirect), so this
+              would have been unreachable dead chrome. */}
           <RailButton iconName="settings" label="Settings" href="/settings" active={pathname === "/settings"} expanded={expanded} />
-          {role === "admin" && (
-            <RailButton iconName="admin_panel_settings" label="Admin dashboard" href="/admin" active={pathname === "/admin"} expanded={expanded} />
-          )}
           <button
             onClick={logout}
             title="Sign out"

@@ -2,7 +2,7 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 
 export const metadata = {
-  title: "Employee Request Assistant",
+  title: "AX Platform",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
