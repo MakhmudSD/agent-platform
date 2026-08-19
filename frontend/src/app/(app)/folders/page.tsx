@@ -92,7 +92,7 @@ export default function Folders() {
       </div>
 
         <div className="flex-1 overflow-y-auto bg-surface px-9 py-8">
-          <div className="max-w-3xl mx-auto flex flex-col gap-6">
+          <div className="max-w-6xl mx-auto flex flex-col gap-6">
             {/* Folder chips row */}
             <div className="flex flex-wrap items-center gap-2">
               <button
@@ -143,8 +143,11 @@ export default function Folders() {
               <p className="text-[12px] text-text-tertiary -mt-3">{unfiledCount} conversation{unfiledCount === 1 ? "" : "s"} not yet filed into a folder.</p>
             )}
 
-            {/* Conversation list */}
-            <div className="flex flex-col gap-1">
+            {/* Conversation cards -- a grid, not a stacked list, now that
+                the page uses the full main-area width; a single-column
+                list of full-width bars would just stretch each row into a
+                long thin strip instead of using the extra room. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {visibleRuns.map((r) => {
                 const summary = summarize(r.draft);
                 const pinned = pinnedIds.includes(r.run_id);
@@ -152,31 +155,35 @@ export default function Folders() {
                   <div
                     key={r.run_id}
                     onClick={() => router.push(`/?run=${r.run_id}`)}
-                    className="flex items-center gap-3 text-left px-4 py-3 rounded-xl bg-card shadow-card hover:bg-neutral-fill/30 transition-colors cursor-pointer"
+                    className="flex flex-col gap-2.5 text-left p-4 rounded-xl bg-card shadow-card hover:bg-neutral-fill/30 transition-colors cursor-pointer"
                   >
-                    <div className="flex-1 min-w-0">
-                      <span className="block text-sm font-medium text-ink">{summary ?? "New request"}</span>
-                      <span className="block text-xs text-text-tertiary mt-0.5">{r.status.replace("_", " ")}</span>
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-sm font-medium text-ink min-w-0 line-clamp-2">{summary ?? "New request"}</span>
+                      <div className="shrink-0">
+                        <ConvoRowMenu
+                          pinned={pinned}
+                          folders={folders}
+                          currentFolderId={r.folder_id ?? null}
+                          onTogglePin={() => setPinnedIds(togglePin(user.id, r.run_id))}
+                          onArchive={() => api.setRunArchived(r.run_id, true).then(refetchRuns)}
+                          onAssignFolder={(fid) => api.setRunFolder(r.run_id, fid).then(refetchRuns).then(() => api.listFolders().then(setFolders))}
+                          onCreateFolder={async (name) => {
+                            const folder = await api.createFolder(name);
+                            setFolders((fs) => [...fs, folder]);
+                            return folder.id;
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <span className="block text-xs text-text-tertiary capitalize">{r.status.replace("_", " ")}</span>
                       <MiniProgress status={r.status} />
                     </div>
-                    <ConvoRowMenu
-                      pinned={pinned}
-                      folders={folders}
-                      currentFolderId={r.folder_id ?? null}
-                      onTogglePin={() => setPinnedIds(togglePin(user.id, r.run_id))}
-                      onArchive={() => api.setRunArchived(r.run_id, true).then(refetchRuns)}
-                      onAssignFolder={(fid) => api.setRunFolder(r.run_id, fid).then(refetchRuns).then(() => api.listFolders().then(setFolders))}
-                      onCreateFolder={async (name) => {
-                        const folder = await api.createFolder(name);
-                        setFolders((fs) => [...fs, folder]);
-                        return folder.id;
-                      }}
-                    />
                   </div>
                 );
               })}
               {visibleRuns.length === 0 && (
-                <p className="text-sm text-text-tertiary py-6 text-center">
+                <p className="col-span-full text-sm text-text-tertiary py-6 text-center">
                   {selected === null ? "No conversations yet." : "Nothing filed here yet."}
                 </p>
               )}

@@ -221,6 +221,7 @@ export function Sidebar() {
               console (app/admin/*) with its own nav and never renders this
               Sidebar at all (see (app)/layout.tsx's redirect), so this
               would have been unreachable dead chrome. */}
+          <RailButton iconName="help" label="Help" href="/help" active={pathname === "/help"} expanded={expanded} />
           <RailButton iconName="settings" label="Settings" href="/settings" active={pathname === "/settings"} expanded={expanded} />
           <button
             onClick={logout}
