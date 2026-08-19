@@ -812,15 +812,21 @@ function HomeInner() {
                       <button
                         key={a.name}
                         onClick={() => setOpenAgentGuide(a)}
-                        className="flex items-start gap-3 px-4 py-3.5 rounded-xl bg-card shadow-card text-left hover:bg-neutral-fill/30 transition-colors"
+                        className="flex flex-col gap-2.5 px-4 py-3.5 rounded-xl bg-card shadow-card text-left hover:bg-neutral-fill/30 transition-colors"
                       >
-                        <span className="shrink-0 w-8 h-8 rounded-lg bg-accent-tint text-accent flex items-center justify-center">
-                          <Icon name={a.icon} size={16} filled={false} />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-ink">{a.name}</p>
-                          <p className="text-[12.5px] text-text-tertiary mt-0.5 leading-[1.4]">{a.purpose}</p>
+                        <div className="flex items-start gap-3">
+                          <span className="shrink-0 w-8 h-8 rounded-lg bg-accent-tint text-accent flex items-center justify-center">
+                            <Icon name={a.icon} size={16} filled={false} />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-ink">{a.name}</p>
+                            <p className="text-[12.5px] text-text-tertiary mt-0.5 leading-[1.4]">{a.purpose}</p>
+                          </div>
                         </div>
+                        <span className="flex items-center gap-1 text-[11px] font-medium text-accent">
+                          <Icon name="help" size={13} filled={false} />
+                          User guide
+                        </span>
                       </button>
                     ))}
                   </div>
