@@ -15,6 +15,7 @@ import {
 } from "@/components/AgentVisuals";
 import { EditableDraftFields } from "@/components/EditableDraftFields";
 import { Icon } from "@/components/Icon";
+import { AgentGuideModal, AgentInfo } from "@/components/AgentGuideModal";
 import { NotificationBell } from "@/components/NotificationBell";
 import { ConversationFeedback } from "@/components/ConversationFeedback";
 import { dismissAgentHint, isAgentHintDismissed } from "@/lib/agentHint";
@@ -34,12 +35,37 @@ import { useAuth } from "@/lib/auth";
 // state, so a first-time user knows what's actually happening under "I'll
 // ask what's missing, check policy, and route it" before they've seen it
 // run once.
-const AGENT_INFO: { icon: string; name: string; purpose: string }[] = [
-  { icon: "chat", name: "Intake", purpose: "Gathers the details your request needs -- amount, cost center, date, justification -- by asking only for what's missing." },
-  { icon: "policy", name: "Policy Research", purpose: "Checks your request against real company policy documents and cites what applies." },
-  { icon: "edit_note", name: "Drafting", purpose: "Turns the gathered details and policy findings into the structured request that gets sent for approval." },
-  { icon: "alt_route", name: "Escalation & Routing", purpose: "Decides whether your request needs a standard approver or a specialist reviewer, based on policy rules." },
-  { icon: "summarize", name: "Approval Summary", purpose: "Writes the decision brief your approver sees -- what you're asking for and why it's routed the way it is." },
+const AGENT_INFO: AgentInfo[] = [
+  {
+    icon: "chat",
+    name: "Intake",
+    purpose: "Gathers the details your request needs -- amount, cost center, date, justification -- by asking only for what's missing.",
+    guide: "Runs the moment you send your first message.\n\nHow to use it: just describe what you need in plain language, the way you'd tell a coworker -- \"$400 conference ticket for the SF summit next month.\" If anything required is missing, it asks one follow-up question at a time; answer it like a normal chat reply and it picks up where it left off.\n\nYou'll know it's done when the conversation moves on to policy checking without asking anything further.",
+  },
+  {
+    icon: "policy",
+    name: "Policy Research",
+    purpose: "Checks your request against real company policy documents and cites what applies.",
+    guide: "Runs automatically once Intake has enough detail -- there's nothing to trigger.\n\nHow to use it: nothing to do while it runs. Read the citations and rule checklist it posts -- that's the actual policy text your request is being checked against, not a summary, so if a cap or rule looks wrong it's worth flagging before you submit rather than after.\n\nIf no policy matches your request, it says so explicitly rather than showing an empty checklist.",
+  },
+  {
+    icon: "edit_note",
+    name: "Drafting",
+    purpose: "Turns the gathered details and policy findings into the structured request that gets sent for approval.",
+    guide: "Runs after policy research, automatically.\n\nHow to use it: check the fields it produces against what you actually meant -- amount, category, dates. If something's off, say so in the chat (\"actually the date should be the 12th\") rather than editing after the fact; Drafting will redo the field from your correction so the policy evaluation stays consistent with what's actually being requested.",
+  },
+  {
+    icon: "alt_route",
+    name: "Escalation & Routing",
+    purpose: "Decides whether your request needs a standard approver or a specialist reviewer, based on policy rules.",
+    guide: "Runs once your request is fully drafted -- fully automatic, no input from you.\n\nHow to use it: nothing to do. It reads the policy rules that matched and picks exactly one destination -- your regular approver, or a specialist reviewer (finance/legal/IT) when a rule specifically calls for one. The reasoning it shows is the real basis for that decision, not a generic explanation, so it's worth reading if you're wondering why a routine-looking request got escalated.",
+  },
+  {
+    icon: "summarize",
+    name: "Approval Summary",
+    purpose: "Writes the decision brief your approver sees -- what you're asking for and why it's routed the way it is.",
+    guide: "Runs last, right before your request reaches the approval queue.\n\nHow to use it: this is the one worth double-checking -- it's the brief your approver actually reads to decide, not the full conversation, so if it misrepresents what you're asking for or why, that's the moment to say something in chat before it goes out, since editing after submission means restarting the approval.",
+  },
 ];
 
 const REQUIRED_FIELDS = ["category", "amount", "date", "justification", "cost_center"];
@@ -179,6 +205,7 @@ function HomeInner() {
   // this run start."
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [agentHintDismissed, setAgentHintDismissed] = useState(true);
+  const [openAgentGuide, setOpenAgentGuide] = useState<AgentInfo | null>(null);
   const [recentRuns, setRecentRuns] = useState<RunListItem[]>([]);
   const [pinnedIds, setPinnedIds] = useState<string[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -782,7 +809,11 @@ function HomeInner() {
                   <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">The agents in this conversation</p>
                   <div className="grid grid-cols-2 gap-2.5">
                     {AGENT_INFO.map((a) => (
-                      <div key={a.name} className="flex items-start gap-3 px-4 py-3.5 rounded-xl bg-card shadow-card">
+                      <button
+                        key={a.name}
+                        onClick={() => setOpenAgentGuide(a)}
+                        className="flex items-start gap-3 px-4 py-3.5 rounded-xl bg-card shadow-card text-left hover:bg-neutral-fill/30 transition-colors"
+                      >
                         <span className="shrink-0 w-8 h-8 rounded-lg bg-accent-tint text-accent flex items-center justify-center">
                           <Icon name={a.icon} size={16} filled={false} />
                         </span>
@@ -790,10 +821,14 @@ function HomeInner() {
                           <p className="text-sm font-medium text-ink">{a.name}</p>
                           <p className="text-[12.5px] text-text-tertiary mt-0.5 leading-[1.4]">{a.purpose}</p>
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>
+
+                {openAgentGuide && (
+                  <AgentGuideModal agent={openAgentGuide} onClose={() => setOpenAgentGuide(null)} />
+                )}
 
                 {(() => {
                   const visibleRuns = recentRuns.filter((r) => !r.archived);
