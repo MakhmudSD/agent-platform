@@ -42,6 +42,13 @@ class Settings(BaseSettings):
     krw_per_usd: float = 1413.0
     allowed_origins: str = "http://localhost:3000"
 
+    # False for local dev (http://localhost, same-site). Frontend and
+    # backend deployed to different domains (e.g. Vercel + Render) are
+    # cross-site, so the session cookie needs SameSite=None -- which
+    # browsers only honor when Secure is also set, and Secure requires
+    # HTTPS. Flip via COOKIE_SECURE=true in any cross-domain deployment.
+    cookie_secure: bool = False
+
     # Dev-only default -- MUST be overridden via env var (JWT_SECRET_KEY) in
     # any environment reachable by anyone but the developer; every session
     # cookie is forgeable by anyone who knows this value.

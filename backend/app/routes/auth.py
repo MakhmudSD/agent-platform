@@ -40,8 +40,8 @@ def _set_session_cookie(response: Response, user: User) -> None:
         key=SESSION_COOKIE_NAME,
         value=token,
         httponly=True,
-        samesite="lax",
-        secure=False,  # dev over plain http -- flip to True behind HTTPS in production
+        samesite="none" if settings.cookie_secure else "lax",
+        secure=settings.cookie_secure,
         max_age=settings.jwt_expire_minutes * 60,
         path="/",
     )
@@ -70,7 +70,13 @@ def login(body: LoginRequest, response: Response, db: Session = Depends(get_db))
 
 @router.post("/logout")
 def logout(response: Response):
-    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    settings = get_settings()
+    response.delete_cookie(
+        SESSION_COOKIE_NAME,
+        path="/",
+        samesite="none" if settings.cookie_secure else "lax",
+        secure=settings.cookie_secure,
+    )
     return {"ok": True}
 
 
