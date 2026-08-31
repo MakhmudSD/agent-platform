@@ -88,6 +88,18 @@ reject a `Secure` cookie outright. `logout`'s `delete_cookie` was updated to
 match the same attributes — mismatched `SameSite`/`Secure` on delete can
 leave a cookie that a browser won't actually clear.
 
+## Known limitations
+
+**One session per browser profile**: session auth is an httpOnly cookie
+(`backend/app/routes/auth.py`), which the browser scopes to the origin, not
+the tab. Logging in as a second role (e.g. Approver) in a new tab overwrites
+the session for every tab of that profile — a Requester tab left open will
+silently start showing the Approver's context on its next request. This is
+a platform constraint, not a bug: no frontend change makes two httpOnly
+cookies coexist for one origin across tabs of the same profile. Testing or
+demoing multiple roles concurrently requires separate browser profiles or
+incognito windows.
+
 ## Run it locally
 
 ### 1. Database
