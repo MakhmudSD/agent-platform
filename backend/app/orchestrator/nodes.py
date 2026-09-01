@@ -258,9 +258,35 @@ def intake_node(state: OrchestratorState, config: RunnableConfig) -> dict:
             return {"draft": draft, "pending_question": question, "pending_topic_switch": None}
 
         if choice == "continue_current":
+            # state["pending_question"] is the confirmation prompt itself at
+            # this point (overwritten when the switch was first detected,
+            # below) -- re-asking it verbatim was the actual bug a prior
+            # fix attempt mistook for classifier flakiness. The real
+            # question to resume is pending_switch["original_question"],
+            # captured before it got clobbered. Re-running GATHER against
+            # it (rather than just re-displaying it) also means a reply
+            # like "$1200" that both answers the original question AND
+            # implies "continue" gets applied immediately instead of
+            # requiring a second round-trip.
             log_event(db, run, "topic_switch_declined", {"ignored_message": pending_switch["message"]})
-            question = state.get("pending_question") or "Could you clarify your request?"
-            return {"pending_question": question, "pending_topic_switch": None}
+            original_question = pending_switch.get("original_question")
+            result = structured_call(
+                GATHER_SYSTEM_PROMPT,
+                f"Current date: {date.today().isoformat()}\n"
+                f"Current draft: {state['draft']}\n"
+                f"Question you last asked the employee: {original_question or '(none yet)'}\n"
+                f"Latest message from employee: {latest_message}",
+            )
+            draft = result.get("updated_draft", state["draft"])
+            run.draft = draft
+            log_event(db, run, "draft_updated", {"draft": draft, "source": "topic_switch_continue_resumed"})
+            if result.get("ready_to_draft"):
+                run.status = RunStatus.RETRIEVING
+                log_event(db, run, "state_transition", {"to": RunStatus.RETRIEVING.value})
+                return {"draft": draft, "status": RunStatus.RETRIEVING.value, "pending_topic_switch": None}
+            question = result.get("next_question") or original_question or "Could you clarify your request?"
+            log_event(db, run, "clarifying_question_asked", {"question": question})
+            return {"draft": draft, "pending_question": question, "pending_topic_switch": None}
 
         # "unclear" -- re-ask the same choice rather than guessing either way.
         question = (
