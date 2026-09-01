@@ -38,9 +38,10 @@ class OrchestratorState(TypedDict, total=False):
     policy_relevance: str | None  # "relevant" | "not_relevant", set by policy_research
     next_query: str | None  # refined query suggested by the relevance check
     pending_question: str | None  # set by intake when not ready_to_draft
-    # {"message": str, "summary": str} while intake is waiting on the
-    # employee to choose between continuing the current draft or abandoning
-    # it for a different request the last message looked like -- None the
+    # {"message": str, "summary": str, "original_question": str | None} while
+    # intake is waiting on the employee to choose between continuing the
+    # current draft or abandoning it for a different request the last
+    # message looked like -- None the
     # rest of the time. See intake_node's topic-switch handling.
     pending_topic_switch: dict | None
     manager_target: str  # set by manager, read by the conditional edge after it

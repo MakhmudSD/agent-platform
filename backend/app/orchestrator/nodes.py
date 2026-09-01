@@ -222,6 +222,8 @@ def intake_node(state: OrchestratorState, config: RunnableConfig) -> dict:
         resolution = structured_call(
             TOPIC_SWITCH_CONFIRM_PROMPT,
             f"Original request so far: {state['draft']}\n"
+            f"Question you were asking about the original request before the switch: "
+            f"{pending_switch.get('original_question') or '(unknown)'}\n"
             f"What the new message looked like: {pending_switch['summary']}\n"
             f"Employee's reply: {latest_message}",
             response_schema=_TOPIC_SWITCH_CHOICE_SCHEMA,
@@ -293,7 +295,11 @@ def intake_node(state: OrchestratorState, config: RunnableConfig) -> dict:
         log_event(db, run, "clarifying_question_asked", {"question": question})
         return {
             "pending_question": question,
-            "pending_topic_switch": {"message": latest_message, "summary": summary},
+            "pending_topic_switch": {
+                "message": latest_message,
+                "summary": summary,
+                "original_question": state.get("pending_question"),
+            },
         }
 
     draft = result.get("updated_draft", state["draft"])

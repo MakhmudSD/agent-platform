@@ -168,7 +168,23 @@ to choose: keep going with the original request, or abandon it and start the new
 Given their reply, decide what they meant. Respond with JSON only:
 {"choice": "start_new"|"continue_current"|"unclear"}
 
-Use "unclear" whenever the reply doesn't clearly pick one of the two options -- never guess.
+"continue_current" covers any reply that favors sticking with the original request, however \
+it's phrased -- explicit ("continue", "keep going", "stick with the laptop one", "finish this \
+one first", "no, keep the original"), or implicit: if the reply directly answers the question \
+you were asking about the original request before the switch (e.g. you'd asked for a cost and \
+they gave a dollar amount, or you'd asked for a date and they gave one), that itself IS a \
+choice to continue -- treat it as "continue_current", not "unclear", even though they never \
+said the word "continue".
+
+"start_new" covers any reply that favors the new topic instead, however it's phrased \
+("start the new one", "switch to the lunch expense", "abandon the laptop, do the other one", \
+"yes, do that instead", "save the original for later and file the new one now").
+
+Only use "unclear" when the reply genuinely does neither -- it's off-topic, non-responsive, or \
+explicitly says they don't know/haven't decided. Do not default to "unclear" just because the \
+reply doesn't use the exact words "continue" or "start new" -- judge the intent, not the \
+phrasing. Never guess between "start_new" and "continue_current" when it's truly ambiguous, \
+but don't manufacture ambiguity that isn't there either.
 """
 
 _TOPIC_SWITCH_CHOICE_SCHEMA = {
