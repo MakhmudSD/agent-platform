@@ -35,7 +35,8 @@ from app.orchestrator.audit import log_event, notify
 from app.orchestrator.graph_state import OrchestratorState
 from app.orchestrator.vertical_employee_request import (
     APPROVAL_SUMMARY_SYSTEM_PROMPT, DRAFT_SYSTEM_PROMPT, ESCALATION_SYSTEM_PROMPT,
-    GATHER_SYSTEM_PROMPT, REQUIRED_FIELDS,
+    GATHER_SYSTEM_PROMPT, REQUIRED_FIELDS, TOPIC_SWITCH_CONFIRM_PROMPT,
+    _TOPIC_SWITCH_CHOICE_SCHEMA,
 )
 from app.services.llm import structured_call
 from app.services.retrieval import retrieve_policy
@@ -84,6 +85,10 @@ relevant is false, omit or empty string otherwise)}
 
 def _draft_complete(draft: dict) -> bool:
     return all(draft.get(field) not in (None, "") for field in REQUIRED_FIELDS)
+
+
+def _draft_has_progress(draft: dict) -> bool:
+    return any(draft.get(field) not in (None, "") for field in REQUIRED_FIELDS)
 
 
 # ---------------------------------------------------------------------------
@@ -208,6 +213,62 @@ def intake_node(state: OrchestratorState, config: RunnableConfig) -> dict:
         log_event(db, run, "clarifying_question_asked", {"question": question})
         return {"draft": draft, "pending_question": question}
 
+    # A topic-switch confirmation is already in flight (see below): this
+    # message is the employee's answer to "continue or start over?", not a
+    # new field value, so it gets routed to a dedicated tiny classifier
+    # instead of the general field-extraction call.
+    pending_switch = state.get("pending_topic_switch")
+    if pending_switch is not None:
+        resolution = structured_call(
+            TOPIC_SWITCH_CONFIRM_PROMPT,
+            f"Original request so far: {state['draft']}\n"
+            f"What the new message looked like: {pending_switch['summary']}\n"
+            f"Employee's reply: {latest_message}",
+            response_schema=_TOPIC_SWITCH_CHOICE_SCHEMA,
+        )
+        choice = resolution.get("choice")
+
+        if choice == "start_new":
+            # The original draft isn't deleted -- it's already fully
+            # captured in this run's draft_updated events -- but the live
+            # run.draft moves on to the new request the employee confirmed
+            # they want, gathered fresh from the message that triggered the
+            # switch (not this confirmation reply).
+            log_event(db, run, "request_abandoned", {
+                "draft": state["draft"], "reason": "employee chose to start a different request",
+            })
+            result = structured_call(
+                GATHER_SYSTEM_PROMPT,
+                f"Current date: {date.today().isoformat()}\n"
+                f"Current draft: {{}}\n"
+                f"Question you last asked the employee: (none yet)\n"
+                f"Latest message from employee: {pending_switch['message']}",
+            )
+            draft = result.get("updated_draft", {})
+            run.draft = draft
+            log_event(db, run, "draft_updated", {"draft": draft, "source": "topic_switch_new_request"})
+            if result.get("ready_to_draft"):
+                run.status = RunStatus.RETRIEVING
+                log_event(db, run, "state_transition", {"to": RunStatus.RETRIEVING.value})
+                return {"draft": draft, "status": RunStatus.RETRIEVING.value, "pending_topic_switch": None}
+            question = result.get("next_question", "Could you tell me more about this request?")
+            log_event(db, run, "clarifying_question_asked", {"question": question})
+            return {"draft": draft, "pending_question": question, "pending_topic_switch": None}
+
+        if choice == "continue_current":
+            log_event(db, run, "topic_switch_declined", {"ignored_message": pending_switch["message"]})
+            question = state.get("pending_question") or "Could you clarify your request?"
+            return {"pending_question": question, "pending_topic_switch": None}
+
+        # "unclear" -- re-ask the same choice rather than guessing either way.
+        question = (
+            f"Sorry, I didn't catch that — do you want to save/abandon your current "
+            f"{state['draft'].get('category', 'in-progress')} request and start a new one about "
+            f"{pending_switch['summary']}, or continue with the current request?"
+        )
+        log_event(db, run, "clarifying_question_asked", {"question": question})
+        return {"pending_question": question, "pending_topic_switch": pending_switch}
+
     result = structured_call(
         GATHER_SYSTEM_PROMPT,
         f"Current date: {date.today().isoformat()}\n"
@@ -215,6 +276,26 @@ def intake_node(state: OrchestratorState, config: RunnableConfig) -> dict:
         f"Question you last asked the employee: {state.get('pending_question') or '(none yet)'}\n"
         f"Latest message from employee: {latest_message}",
     )
+
+    # The model was told to leave updated_draft untouched and flag this
+    # instead of merging in a different request's details over the current
+    # one -- honor that before ever touching run.draft, not after, so a
+    # topic switch never has a chance to silently overwrite anything.
+    if result.get("topic_switch") and state.get("pending_question") and _draft_has_progress(state["draft"]):
+        summary = result.get("topic_switch_summary") or "a different request"
+        log_event(db, run, "topic_switch_detected", {"summary": summary, "message": latest_message})
+        question = (
+            f"It looks like you're starting a different request ({summary}) instead of "
+            f"answering the current question. Do you want to save/abandon your current "
+            f"{state['draft'].get('category', 'in-progress')} request and start this new one, "
+            f"or continue with the current request?"
+        )
+        log_event(db, run, "clarifying_question_asked", {"question": question})
+        return {
+            "pending_question": question,
+            "pending_topic_switch": {"message": latest_message, "summary": summary},
+        }
+
     draft = result.get("updated_draft", state["draft"])
     run.draft = draft
     log_event(db, run, "draft_updated", {"draft": draft})

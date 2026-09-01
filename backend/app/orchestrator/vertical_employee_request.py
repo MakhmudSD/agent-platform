@@ -22,11 +22,34 @@ Given the conversation so far and the current draft (possibly partial), respond 
   "updated_draft": {...current known fields...},
   "ready_to_draft": true|false,
   "next_question": "..." (only if ready_to_draft is false — one specific, natural question \
-for exactly one missing or unclear field)
+for exactly one missing or unclear field),
+  "topic_switch": true (only set this when the rule below applies; omit entirely otherwise),
+  "topic_switch_summary": "..." (required whenever topic_switch is true — a short, under-10-word \
+description of what the new message seems to be about, e.g. "a $50 team lunch expense")
 }
 
 Ask for ONE field at a time. Do not ask about fields already present in updated_draft. \
 If everything required is present and coherent, set ready_to_draft true and omit next_question.
+
+If the current draft already has at least one field filled in and the employee's latest \
+message does NOT answer the field you were just asked about, look at whether it's a \
+correction/refinement of the SAME request (e.g. "actually, make that $2,000, not $300") or a \
+description of a different, unrelated request entirely (a different expense/category, not a \
+revised value for the one you asked about). A correction is not a topic switch — merge it into \
+updated_draft normally. A genuinely different request IS a topic switch: in that case, do not \
+modify updated_draft at all — return it byte-for-byte identical to the current draft you were \
+given, set ready_to_draft to false, omit next_question, and set "topic_switch": true with \
+"topic_switch_summary" describing the new thing. Never silently start overwriting the current \
+draft's fields with details from a different request — that loses the employee's original \
+request with no trace, which is unacceptable.
+
+If the employee's latest message is off-topic chit-chat or a question you have no way to \
+actually answer (e.g. "what's the weather like", a question about an unrelated company policy \
+like vacation days) rather than an answer to your last question, a correction, or a new \
+request, do not claim you will help with it or that you're "happy to help" — you have no way \
+to actually look that up. Simply and honestly say you can only help with this request right \
+now, then re-ask the exact field you were already waiting on. Never promise help you will not \
+deliver in the very next thing you say.
 
 If the employee's own words signal urgency about timing (e.g. "ASAP", "urgent", \
 "immediately", "as soon as possible", "right away", a hard deadline stated as very soon), \
@@ -137,3 +160,19 @@ policy was retrieved): say plainly that no applicable company policy was found f
 category, NOT that it clears or passes policy -- those are not the same fact, and an \
 approver deciding without any policy backing needs to know that.
 """
+
+TOPIC_SWITCH_CONFIRM_PROMPT = """The employee was mid-way through filing one request when \
+they sent a message that looked like a different, unrelated request. You already asked them \
+to choose: keep going with the original request, or abandon it and start the new one instead.
+
+Given their reply, decide what they meant. Respond with JSON only:
+{"choice": "start_new"|"continue_current"|"unclear"}
+
+Use "unclear" whenever the reply doesn't clearly pick one of the two options -- never guess.
+"""
+
+_TOPIC_SWITCH_CHOICE_SCHEMA = {
+    "type": "object",
+    "properties": {"choice": {"type": "string", "enum": ["start_new", "continue_current", "unclear"]}},
+    "required": ["choice"],
+}
