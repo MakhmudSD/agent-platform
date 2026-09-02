@@ -221,13 +221,15 @@ function AgentText(props: { children: ReactNode }) {
   );
 }
 
-function ApprovalCard(props: { draft: Record<string, string>; onDecision: (approved: boolean) => void }) {
-  const { draft, onDecision } = props;
+function ApprovalCard(props: { draft: Record<string, string>; decided: boolean; onDecision: (approved: boolean) => void }) {
+  const { draft, decided, onDecision } = props;
   return (
-    <div className={`${CARD} w-[560px] max-w-full overflow-hidden animate-cardin`}>
+    <div className={`${CARD} w-[560px] max-w-full overflow-hidden animate-cardin ${decided ? "opacity-60" : ""}`}>
       <div className="px-5 pt-[18px] pb-2.5 flex items-center gap-2">
-        <StatusDot active />
-        <span className="text-[13.5px] font-semibold text-ink">Awaiting your approval</span>
+        <StatusDot active={!decided} />
+        <span className="text-[13.5px] font-semibold text-ink">
+          {decided ? "Awaiting your approval — decided" : "Awaiting your approval"}
+        </span>
       </div>
       <div className="px-5 pb-5 space-y-3">
         <dl className="grid grid-cols-[110px_1fr] gap-y-1.5 text-[13.5px]">
@@ -238,16 +240,25 @@ function ApprovalCard(props: { draft: Record<string, string>; onDecision: (appro
             </div>
           ))}
         </dl>
+        {/* Disabled the instant a decision is recorded -- this card is a
+            transcript entry, not a live control that outlives its own
+            action. Without this, every click (however many happen after
+            the first) pushed another "final" block, and the card itself
+            kept looking actionable even after the input below had already
+            locked to "This request is settled." -- two different pieces
+            of UI reading the same decision and disagreeing about it. */}
         <div className="flex gap-2.5 pt-2">
           <button
             onClick={() => onDecision(true)}
-            className="px-4 py-2 text-sm font-semibold rounded-2xl bg-accent text-white shadow-teal-cta hover:bg-accent-dark transition-colors"
+            disabled={decided}
+            className="px-4 py-2 text-sm font-semibold rounded-2xl bg-accent text-white shadow-teal-cta hover:bg-accent-dark disabled:opacity-40 disabled:pointer-events-none transition-colors"
           >
             Approve
           </button>
           <button
             onClick={() => onDecision(false)}
-            className="px-4 py-2 text-sm font-medium rounded-2xl bg-panel border border-control text-ink-2 hover:bg-app transition-colors"
+            disabled={decided}
+            className="px-4 py-2 text-sm font-medium rounded-2xl bg-panel border border-control text-ink-2 hover:bg-app disabled:opacity-40 disabled:pointer-events-none transition-colors"
           >
             Reject
           </button>
@@ -363,6 +374,14 @@ export default function DesignPreview() {
   }
 
   function handleDecision(approved: boolean) {
+    // `decision` is the one source of truth for "is this request settled" --
+    // the approval card's own disabled state, the composer's placeholder,
+    // and this guard all read the same value, instead of each independently
+    // inferring "done" from something else. The disabled buttons on
+    // ApprovalCard should already prevent a second call, but a state guard
+    // here is what actually keeps this a single source of truth rather than
+    // relying on the UI never sending a second click.
+    if (decision !== null) return;
     setStatus(approved ? "finalized" : "rejected");
     setDecision(approved ? "approved" : "rejected");
     push({ kind: "final" });
@@ -444,14 +463,22 @@ export default function DesignPreview() {
                     case "draft_summary":
                       return <DraftSummaryStrip key={block.id} draft={draft} changedField={changedField} />;
                     case "approval":
-                      return <ApprovalCard key={block.id} draft={draft} onDecision={handleDecision} />;
+                      return <ApprovalCard key={block.id} draft={draft} decided={decision !== null} onDecision={handleDecision} />;
                     case "final":
                       return <FinalConfirmation key={block.id} approved={decision === "approved"} />;
                     default:
                       return null;
                   }
                 })}
-                {((step === 1 && status === "checking_policy") || (step === 2 && status !== "waiting" && status !== "awaiting_decision")) && (
+                {/* This is a transient "still working" indicator, not a
+                    timeline entry -- it has to stop existing once the
+                    request reaches a terminal status, or it keeps
+                    rendering forever, relabeled with whatever the terminal
+                    status is (e.g. "Sent back to you" sitting underneath
+                    the real "Sent back to you" confirmation card above it,
+                    looking like a second, differently-styled copy of the
+                    same event). */}
+                {!isTerminal(status) && ((step === 1 && status === "checking_policy") || (step === 2 && status !== "waiting" && status !== "awaiting_decision")) && (
                   <div className="flex items-center gap-2 text-sm text-text-tertiary px-1">
                     <StatusDot active />
                     {status ? STATUS_LABEL[status] : "Working..."}
