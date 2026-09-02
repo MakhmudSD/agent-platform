@@ -123,6 +123,9 @@ export default function LoginPage() {
         )}
 
         <p className="text-center text-[11px] text-text-tertiary mt-6">
+          Demo environment — sample data only
+        </p>
+        <p className="text-center text-[11px] text-text-tertiary mt-1">
           Demo accounts: requester@acme-demo.com / approver@acme-demo.com / reviewer@acme-demo.com — password demo1234
         </p>
       </div>
