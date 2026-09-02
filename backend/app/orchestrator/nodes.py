@@ -373,15 +373,6 @@ def policy_research_node(state: OrchestratorState, config: RunnableConfig) -> di
 
     query = state.get("next_query") or f"{draft.get('category', '')} {draft.get('justification', '')}"
     matches = retrieve_policy(db, query, top_k=2) if query.strip() else []
-    # excerpt included so the live "policy checked" visual (rendered the
-    # instant this event streams) can show the same evidence clause the
-    # final approval card shows -- not just titles.
-    log_event(db, run, "policy_retrieved", {
-        "matches": [
-            {"title": m.title, "doc_id": m.doc_id, "score": m.score, "excerpt": _excerpt(m.text)}
-            for m in matches
-        ]
-    })
 
     policies = [
         {"title": m.title, "doc_id": m.doc_id, "score": m.score, "text": m.text}
@@ -403,11 +394,27 @@ def policy_research_node(state: OrchestratorState, config: RunnableConfig) -> di
         relevant = bool(relevance_result.get("relevant", True))
         refined_query = relevance_result.get("refined_query") or None
 
+    narration = _policy_research_narration(matches, relevant)
+
+    # excerpt included so the live "policy checked" visual (rendered the
+    # instant this event streams) can show the same evidence clause the
+    # final approval card shows -- not just titles. narration included the
+    # same way, so a live-wired frontend can show the one-line version
+    # first and the excerpts only on expand, without a second round-trip.
+    log_event(db, run, "policy_retrieved", {
+        "matches": [
+            {"title": m.title, "doc_id": m.doc_id, "score": m.score, "excerpt": _excerpt(m.text)}
+            for m in matches
+        ],
+        "narration": narration,
+    })
+
     return {
         "retrieved_policies": policies,
         "retrieval_attempts": attempts,
         "policy_relevance": "relevant" if relevant else "not_relevant",
         "next_query": refined_query,
+        "narration": narration,
     }
 
 
@@ -424,6 +431,32 @@ def _excerpt(text: str) -> str:
     if len(text) <= _EXCERPT_LIMIT:
         return text
     return text[:_EXCERPT_LIMIT].rstrip() + "..."
+
+
+def _format_amount(value: object) -> str:
+    # Shared by every narration builder below that quotes a dollar figure
+    # (the request's own amount, a policy cap) -- one place for "$1500"
+    # vs. "$1,500", whole numbers vs. "35.50".
+    try:
+        n = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return str(value)
+    return f"{int(n):,}" if n == int(n) else f"{n:,.2f}"
+
+
+def _policy_research_narration(matches: list, relevant: bool) -> str:
+    # Templated from this node's own retrieval result -- never invents a
+    # rule or threshold, only says which document(s) it actually found.
+    # The specifics (which clause, what it says) live in the expandable
+    # detail reveal the frontend renders from retrieved_policies, not here.
+    if not matches:
+        return "Checked company policy — nothing on file for this yet, so it'll go through standard review."
+    if not relevant:
+        return "Checked company policy — nothing closely on point, so this goes through standard review."
+    titles = [m.title for m in matches[:2]]
+    if len(titles) == 1:
+        return f"Checked company policy — {titles[0]} applies here."
+    return f"Checked company policy — {titles[0]} and {titles[1]} apply here."
 
 
 _POLICY_RULE_STATUSES = {"passed", "binding", "outstanding"}
@@ -605,6 +638,37 @@ def _valid_routing_decision(raw: object) -> dict:
     }
 
 
+def _routing_narration(draft: dict, routing_decision: dict, policy_evaluation: list[dict]) -> str:
+    # Templated from routing_decision + the draft's own amount + the
+    # binding rule's cap (already extracted and evidence-verified by
+    # draft_node's _valid_policy_evaluation, not re-derived here) -- no new
+    # LLM call, and the one sentence that's allowed to state a dollar
+    # threshold only ever quotes a cap that's already survived that
+    # traceability check.
+    amount = draft.get("amount")
+    binding = next((e for e in policy_evaluation if e.get("status") == "binding"), None)
+    cap = binding.get("cap") if binding else None
+
+    if routing_decision["routed_to"] == "approver":
+        if cap is not None and isinstance(amount, (int, float)):
+            comparison = "under" if amount <= cap else "over"
+            return (
+                f"${_format_amount(amount)} is {comparison} the ${_format_amount(cap)} limit, "
+                f"so this only needs manager approval."
+            )
+        return "This only needs standard manager approval."
+
+    category = routing_decision.get("reviewer_category")
+    reviewer = f"the {category} reviewer" if category else "a specialist reviewer"
+    # triggered_rule is the exact rule text copied from the policy
+    # evaluation (see ESCALATION_SYSTEM_PROMPT) -- already a full clause,
+    # so it's quoted as the reason, not appended to a second predicate.
+    rule = routing_decision.get("triggered_rule")
+    if rule:
+        return f"This needs {reviewer} — {rule}"
+    return f"This needs a closer look from {reviewer} before it can move forward."
+
+
 @traced_node("escalation_routing")
 def escalation_routing_node(state: OrchestratorState, config: RunnableConfig) -> dict:
     """The Escalation/Routing Agent. Its output CONTRACT (this shape) is
@@ -626,9 +690,23 @@ def escalation_routing_node(state: OrchestratorState, config: RunnableConfig) ->
     )
     routing_decision = _valid_routing_decision(result)
     run.routed_to = routing_decision["routed_to"]
-    log_event(db, run, "routing_decided", {"routing_decision": routing_decision})
+    narration = _routing_narration(state["draft"], routing_decision, policy_evaluation)
+    log_event(db, run, "routing_decided", {"routing_decision": routing_decision, "narration": narration})
 
-    return {"routing_decision": routing_decision}
+    return {"routing_decision": routing_decision, "narration": narration}
+
+
+def _handoff_narration(routing_decision: dict) -> str:
+    # This node is the actual handoff -- status flips to AWAITING_APPROVAL
+    # and the decider gets notified right after this runs -- so its
+    # narration confirms *that*, distinct from escalation_routing's "why"
+    # sentence one step earlier. Templated from routing_decision alone, no
+    # new LLM call.
+    if routing_decision["routed_to"] == "approver":
+        return "Routing to your approver — no specialist review needed here."
+    category = routing_decision.get("reviewer_category")
+    reviewer = f"the {category} reviewer" if category else "a specialist reviewer"
+    return f"Sent to {reviewer} for a closer look."
 
 
 @traced_node("approval_summary")
@@ -661,6 +739,7 @@ def approval_summary_node(state: OrchestratorState, config: RunnableConfig) -> d
 
     run.status = RunStatus.AWAITING_APPROVAL
     log_event(db, run, "state_transition", {"to": RunStatus.AWAITING_APPROVAL.value})
+    narration = _handoff_narration(routing_decision)
     # Same class of bug as the policy_citations gap fixed earlier (commits
     # 3cdf7fd/d533813): this payload is what a decider sees when they click
     # a run in from the queue instead of watching it live, so
@@ -670,6 +749,7 @@ def approval_summary_node(state: OrchestratorState, config: RunnableConfig) -> d
         "draft": state["draft"], "policy_citations": citations,
         "policy_evaluation": state.get("policy_evaluation", []),
         "routing_decision": routing_decision, "approval_summary": approval_summary,
+        "narration": narration,
     })
     destination = "review" if routing_decision["routed_to"] == "reviewer" else "approval"
     urgent_prefix = "Urgent -- " if state["draft"].get("urgent") else ""
@@ -681,7 +761,7 @@ def approval_summary_node(state: OrchestratorState, config: RunnableConfig) -> d
         target_role=routing_decision["routed_to"],
     )
 
-    return {"status": RunStatus.AWAITING_APPROVAL.value, "approval_summary": approval_summary}
+    return {"status": RunStatus.AWAITING_APPROVAL.value, "approval_summary": approval_summary, "narration": narration}
 
 
 # ---------------------------------------------------------------------------

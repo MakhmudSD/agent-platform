@@ -46,3 +46,12 @@ class OrchestratorState(TypedDict, total=False):
     pending_topic_switch: dict | None
     manager_target: str  # set by manager, read by the conditional edge after it
     approval_decision: dict  # {"approved": bool, "reason": str | None}, set on resume
+    # One-sentence, templated (no LLM call) narration of what the specialist
+    # that just ran found or decided, in the employee's own conversation --
+    # not accumulated across nodes, just the latest node's line. Built
+    # purely from that node's own structured output (retrieved_policies,
+    # routing_decision, ...), never from free text a model wrote, so it can
+    # never say something the state doesn't actually support. Set by
+    # policy_research_node, escalation_routing_node, and
+    # approval_summary_node.
+    narration: str | None

@@ -27,6 +27,14 @@ import { Icon } from "@/components/Icon";
 //  - RunProgress's 4-segment stage bar + breathing dot + elapsed clock is
 //    replaced by one small persistent pill in the header: a dot + label,
 //    the same dot convention used everywhere else something is "live."
+//
+// The policy-check and routing narration lines below are not placeholder
+// copy -- they're the literal output of policy_research_node's,
+// escalation_routing_node's, and approval_summary_node's real narration
+// templates (backend/app/orchestrator/nodes.py) run against this mock's
+// own numbers ($420 request, $500 T&E cap), so the wording, structure, and
+// "why" logic match what the live backend would actually say once wired
+// in, not an invented tone.
 
 type Status = "checking_policy" | "waiting" | "drafting" | "awaiting_decision" | "finalized" | "rejected";
 
@@ -322,7 +330,7 @@ export default function DesignPreview() {
       setStep(1);
       setStatus("checking_policy");
       after(650, () => {
-        push({ kind: "narration", text: "Checked company policy — the travel & entertainment clauses that apply are already satisfied.", detail: POLICY_DETAIL });
+        push({ kind: "narration", text: "Checked company policy — Travel & Entertainment Policy applies here.", detail: POLICY_DETAIL });
         push({ kind: "agent_text", text: "Which cost center should this be billed to?" });
         setStatus("waiting");
       });
@@ -335,9 +343,20 @@ export default function DesignPreview() {
         push({ kind: "narration", text: "Drafted the request from what you told me." });
         push({ kind: "draft_summary" });
         after(700, () => {
-          push({ kind: "narration", text: "Routing to your approver — no specialist review needed here.", detail: ROUTING_DETAIL });
-          setStatus("awaiting_decision");
-          after(500, () => push({ kind: "approval" }));
+          // escalation_routing_node's real narration for this exact mock
+          // (amount $420, binding rule capped at $500 -- see
+          // backend/app/orchestrator/nodes.py's _routing_narration): the
+          // "why" -- a specific, data-grounded sentence, not a generic one.
+          push({ kind: "narration", text: "$420 is under the $500 limit, so this only needs manager approval.", detail: ROUTING_DETAIL });
+          after(500, () => {
+            // approval_summary_node's real narration (_handoff_narration):
+            // the handoff itself, a distinct backend step from the routing
+            // decision above even though both used to collapse into one
+            // line here.
+            push({ kind: "narration", text: "Routing to your approver — no specialist review needed here." });
+            setStatus("awaiting_decision");
+            after(500, () => push({ kind: "approval" }));
+          });
         });
       });
     }
