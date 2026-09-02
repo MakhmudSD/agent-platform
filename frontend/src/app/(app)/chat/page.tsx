@@ -46,7 +46,7 @@ export default function Chat() {
           <p className="text-text-secondary text-sm mb-4">
             {user ? `Ready when you are, ${user.name.split(" ")[0]}.` : "What do you need approved?"}
           </p>
-          <div className="flex items-center gap-3 border border-control rounded-2xl px-[19px] py-2.5 bg-panel focus-within:border-ink-muted transition-colors">
+          <div className="flex items-center gap-3 border border-control rounded-2xl px-[19px] py-2.5 bg-panel focus-within:border-ink-muted focus-within:ring-2 focus-within:ring-ink focus-within:ring-offset-2 transition-colors">
             <input
               value={value}
               onChange={(e) => setValue(e.target.value)}
@@ -57,6 +57,7 @@ export default function Chat() {
             />
             <button
               onClick={handleSend}
+              disabled={!value.trim()}
               aria-label="Send"
               className="w-9 h-9 shrink-0 flex items-center justify-center rounded-xl bg-ink text-white disabled:opacity-30 hover:bg-[#332F28] transition-colors"
             >

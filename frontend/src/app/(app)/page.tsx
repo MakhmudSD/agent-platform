@@ -1016,7 +1016,7 @@ function ChatComposer(props: ChatComposerProps) {
   }
 
   return (
-    <div className="flex items-center gap-3 border border-control rounded-2xl px-4 py-2 bg-panel focus-within:border-ink-muted transition-colors">
+    <div className="flex items-center gap-3 border border-control rounded-2xl px-4 py-2 bg-panel focus-within:border-ink-muted focus-within:ring-2 focus-within:ring-ink focus-within:ring-offset-2 transition-colors">
       {runId && (
         <>
           <input ref={fileInputRef} type="file" onChange={handleFileChange} className="hidden" />
@@ -1041,7 +1041,7 @@ function ChatComposer(props: ChatComposerProps) {
       />
       <button
         onClick={() => onSend()}
-        disabled={disabled}
+        disabled={disabled || !value.trim()}
         aria-label="Send"
         className="w-9 h-9 shrink-0 flex items-center justify-center rounded-xl bg-ink text-white disabled:opacity-30 hover:bg-[#332F28] transition-colors"
       >

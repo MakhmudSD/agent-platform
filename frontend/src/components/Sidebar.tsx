@@ -46,6 +46,7 @@ export function Sidebar() {
   const { user, logout } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [expanded, setExpanded] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [recentRuns, setRecentRuns] = useState<RunListItem[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [pinnedIds, setPinnedIds] = useState<string[]>([]);
@@ -99,6 +100,14 @@ export function Sidebar() {
     setExpanded(localStorage.getItem(EXPANDED_KEY) === "true");
   }, []);
 
+  // Below md, the rail is an off-canvas drawer rather than a permanent
+  // column (see the nav className below) -- closing it on every navigation
+  // is what makes it behave like a drawer instead of a panel that happens
+  // to cover the content until manually dismissed.
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
   function toggleExpanded() {
     setExpanded((e) => {
       localStorage.setItem(EXPANDED_KEY, String(!e));
@@ -125,11 +134,34 @@ export function Sidebar() {
   const unreadCount = notifications.filter((n) => !n.read && (!user || isTypeEnabled(user.id, n.type))).length;
 
   return (
-    <nav
-      className={`shrink-0 h-screen sticky top-0 flex flex-col py-[18px] border-r border-hairline bg-rail transition-[width] duration-200 ${
-        expanded ? "w-[204px] items-stretch px-3" : "w-[68px] items-center"
-      }`}
-    >
+    <>
+      {/* Below md the rail is fixed/off-canvas (see nav className) instead
+          of taking flex space, so nothing in (app)/layout.tsx's row is
+          there to open it -- this trigger is the one thing that has to
+          stay reachable while the drawer itself is translated off-screen. */}
+      <button
+        onClick={() => setMobileOpen(true)}
+        aria-label="Open menu"
+        className="md:hidden fixed top-3 left-3 z-40 w-10 h-10 flex items-center justify-center rounded-[12px] border border-hairline bg-rail text-text-tertiary hover:bg-neutral-fill/50 hover:text-ink-muted transition-colors"
+      >
+        <Icon name="menu" size={20} filled={false} />
+      </button>
+
+      {mobileOpen && (
+        <div
+          onClick={() => setMobileOpen(false)}
+          aria-hidden="true"
+          className="md:hidden fixed inset-0 z-40 bg-black/30"
+        />
+      )}
+
+      <nav
+        className={`h-screen fixed md:sticky top-0 left-0 z-50 flex flex-col py-[18px] border-r border-hairline bg-rail transition-transform md:transition-[width] duration-200 md:shrink-0 ${
+          mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+        } ${
+          expanded ? "w-[204px] items-stretch px-3" : "w-[68px] items-center"
+        }`}
+      >
       {/* Collapsed: the logo alone doubles as the expand toggle -- home
           navigation still exists via the Chat rail icon right below, so
           nothing is lost, and this avoids the two-row "logo, then a
@@ -250,7 +282,8 @@ export function Sidebar() {
           </div>
         </div>
       )}
-    </nav>
+      </nav>
+    </>
   );
 }
 
